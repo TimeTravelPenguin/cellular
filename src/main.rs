@@ -4,12 +4,13 @@ use std::f32;
 
 use avian2d::{self, PhysicsPlugins};
 use bevy::{
+    dev_tools::picking_debug::{DebugPickingMode, DebugPickingPlugin},
     ecs::message::MessageReader,
     input::mouse::{MouseScrollUnit, MouseWheel},
     platform::collections::HashSet,
     prelude::*,
 };
-use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_rand::{
     global::GlobalRng,
     prelude::{EntropyPlugin, WyRand},
@@ -18,7 +19,7 @@ use rand::RngExt;
 
 use crate::{
     cells::{
-        Cell, CellEnergy, Direction, FacingDirection, invoke_cell_actions_system,
+        Cell, CellEnergy, Direction, FacingDirection, SeedCell, invoke_cell_actions_system,
         transfer_energy_system,
     },
     energy::SimulationEnvironment,
@@ -54,6 +55,25 @@ pub enum SimulationView {
     Grid,
     OrganicEnergy,
     ChargeEnergy,
+}
+
+#[derive(Message)]
+pub struct UpdateCellInfoMessage {
+    pub cell: Option<CellInfo>,
+}
+
+#[derive(Component, Reflect, Clone, Debug)]
+pub struct CellInfo {
+    position: GridPosition,
+    cell_type: Cell,
+    energy: CellEnergy,
+    facing: FacingDirection,
+    genome_id: GenomeID,
+}
+
+#[derive(Resource, Reflect, Default, Clone, Debug)]
+pub struct LastHoveredCell {
+    pub cell_info: Option<CellInfo>,
 }
 
 #[derive(Resource, Reflect, Clone, Debug)]
@@ -108,7 +128,8 @@ fn main() {
     let json = serde_json::to_string_pretty(&x).unwrap();
     std::fs::write("genome_entry.json", json).unwrap();
 
-    let simulation_settings = SimulationSettings::default();
+    let mut simulation_settings = SimulationSettings::default();
+    simulation_settings.initial_sprout_count = 1;
     let environment = SimulationEnvironment::new(
         simulation_settings.grid_width,
         simulation_settings.grid_height,
@@ -119,23 +140,46 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins,
+            MeshPickingPlugin,
+            DebugPickingPlugin,
             EntropyPlugin::<WyRand>::default(),
             PhysicsPlugins::default(),
+            EguiPlugin::default(),
         ))
+        .insert_resource(DebugPickingMode::Normal)
+        .add_systems(
+            PreUpdate,
+            (|mut mode: ResMut<DebugPickingMode>| {
+                *mode = match *mode {
+                    DebugPickingMode::Disabled => DebugPickingMode::Normal,
+                    DebugPickingMode::Normal => DebugPickingMode::Noisy,
+                    DebugPickingMode::Noisy => DebugPickingMode::Disabled,
+                }
+            })
+            .distributive_run_if(bevy::input::common_conditions::input_just_pressed(
+                KeyCode::F3,
+            )),
+        )
         .insert_resource(simulation_settings)
         .insert_resource(environment)
-        .add_systems(EguiPrimaryContextPass, ui_example_system)
+        .init_resource::<LastHoveredCell>()
+        .add_message::<UpdateCellInfoMessage>()
+        .add_systems(EguiPrimaryContextPass, cell_info_ui_system)
         .add_systems(
             Startup,
             (
                 setup_camera_system,
                 initialize_sprouts_system,
                 draw_world_grid_system,
+                // add_cell,
             ),
         )
         .add_systems(
             PreUpdate,
-            toggle_grid_visibility_system.run_if(resource_exists::<ToggleGridVisible>),
+            (
+                toggle_grid_visibility_system.run_if(resource_exists::<ToggleGridVisible>),
+                update_last_hovered_cell_system,
+            ),
         )
         .add_systems(
             Update,
@@ -147,7 +191,10 @@ fn main() {
         )
         .add_systems(
             Update,
-            (invoke_cell_actions_system, transfer_energy_system).chain(),
+            (
+                (invoke_cell_actions_system, transfer_energy_system).chain(),
+                // shuffle_cells_system,
+            ),
         )
         .run();
 }
@@ -162,10 +209,23 @@ fn setup_camera_system(mut commands: Commands, simulation_settings: Res<Simulati
     ));
 }
 
-fn ui_example_system(mut contexts: EguiContexts) -> Result {
-    egui::Window::new("Hello").show(contexts.ctx_mut()?, |ui| {
-        ui.label("world");
+fn cell_info_ui_system(
+    mut contexts: EguiContexts,
+    last_hovered_cell: Res<LastHoveredCell>,
+) -> Result {
+    egui::Window::new("Closest Cell Info").show(contexts.ctx_mut()?, |ui| {
+        if let Some(cell) = last_hovered_cell.cell_info.as_ref() {
+            ui.label(format!(
+                "Position: ({}, {})",
+                cell.position.x, cell.position.y
+            ));
+            ui.label(format!("Type: {:?}", cell.cell_type));
+            ui.label(format!("Energy: {}", cell.energy.0));
+            ui.label(format!("Facing: {:?}", cell.facing.0));
+            ui.label(format!("Genome ID: {}", cell.genome_id.0));
+        }
     });
+
     Ok(())
 }
 
@@ -192,6 +252,33 @@ fn initialize_sprouts_system(
             rng.random::<GenomeID>(),
             genome.clone(),
         ));
+    }
+}
+
+fn shuffle_cells_system(
+    mut query: Query<(&mut GridPosition, &mut Transform), With<Cell>>,
+    mut rng: Single<&mut WyRand, With<GlobalRng>>,
+    settings: Res<SimulationSettings>,
+) {
+    info!("Shuffling cells");
+    let mut positions: HashSet<(usize, usize)> = HashSet::new();
+    for (mut pos, mut transform) in query.iter_mut() {
+        loop {
+            let x = rng.random_range(0..settings.grid_width);
+            let y = rng.random_range(0..settings.grid_height);
+
+            if !positions.contains(&(x, y)) {
+                positions.insert((x, y));
+
+                pos.x = x;
+                pos.y = y;
+
+                transform.translation.x = x as f32 * TILE_SIZE;
+                transform.translation.y = y as f32 * TILE_SIZE;
+
+                break;
+            }
+        }
     }
 }
 
@@ -327,6 +414,7 @@ fn draw_world_grid_system(
         commands.spawn((
             Mesh2d(meshes.add(mesh)),
             MeshMaterial2d(materials.add(ColorMaterial::from_color(line_color))),
+            Pickable::IGNORE,
             Visibility::Visible,
             Grid,
         ));
@@ -343,6 +431,7 @@ fn draw_world_grid_system(
         commands.spawn((
             Mesh2d(meshes.add(mesh)),
             MeshMaterial2d(materials.add(ColorMaterial::from_color(line_color))),
+            Pickable::IGNORE,
             Visibility::Visible,
             Grid,
         ));
@@ -374,6 +463,15 @@ pub fn add_cell(mut commands: Commands) {
         Cell::Antenna,
         CellEnergy(100),
         FacingDirection(Direction::East),
+        GridPosition { x: 11, y: 11 },
+        rand::rng().random::<Genome>(),
+        rand::rng().random::<GenomeID>(),
+    ));
+
+    commands.spawn((
+        Cell::Sprout,
+        CellEnergy(100),
+        FacingDirection(Direction::North),
         GridPosition { x: 12, y: 12 },
         rand::rng().random::<Genome>(),
         rand::rng().random::<GenomeID>(),
@@ -383,7 +481,25 @@ pub fn add_cell(mut commands: Commands) {
         Cell::Root,
         CellEnergy(100),
         FacingDirection(Direction::South),
-        GridPosition { x: 10, y: 12 },
+        GridPosition { x: 13, y: 13 },
+        rand::rng().random::<Genome>(),
+        rand::rng().random::<GenomeID>(),
+    ));
+
+    commands.spawn((
+        Cell::Branch,
+        CellEnergy(100),
+        FacingDirection(Direction::West),
+        GridPosition { x: 14, y: 14 },
+        rand::rng().random::<Genome>(),
+        rand::rng().random::<GenomeID>(),
+    ));
+
+    commands.spawn((
+        Cell::Seed(SeedCell::DormantSeed),
+        CellEnergy(100),
+        FacingDirection(Direction::North),
+        GridPosition { x: 15, y: 15 },
         rand::rng().random::<Genome>(),
         rand::rng().random::<GenomeID>(),
     ));
@@ -399,27 +515,7 @@ pub fn draw_cells_system(
         let world_x = grid_pos.x as f32 * TILE_SIZE;
         let world_y = grid_pos.y as f32 * TILE_SIZE;
 
-        let (mesh, material) = match cell {
-            Cell::Leaf => (
-                meshes.add(Ellipse::new(TILE_SIZE / 1.75, TILE_SIZE / 3.0)),
-                materials.add(ColorMaterial::from_color(CELL_GREEN)),
-            ),
-            Cell::Antenna => (
-                meshes.add(Circle::new(TILE_SIZE / 3.0)),
-                materials.add(ColorMaterial::from_color(CELL_BLUE)),
-            ),
-            Cell::Root => (
-                meshes.add(Rectangle::new(TILE_SIZE / 1.5, TILE_SIZE / 1.5)),
-                materials.add(ColorMaterial::from_color(CELL_ORANGE)),
-            ),
-            Cell::Sprout => (
-                meshes.add(Circle::new(TILE_SIZE / 3.0)),
-                materials.add(ColorMaterial::from_color(Color::WHITE)),
-            ),
-            _ => todo!(),
-        };
-
-        let mut transform = Transform::from_translation(Vec3::new(world_x, world_y, 0.0));
+        let mut transform = Transform::from_translation(Vec3::new(world_x, world_y, 1.0));
 
         match facing_direction.0 {
             Direction::East => {}
@@ -433,11 +529,150 @@ pub fn draw_cells_system(
         }
 
         info!("Drawing cell at grid ({}, {})", grid_pos.x, grid_pos.y);
-        commands.entity(entity).insert((
-            Mesh2d(mesh),
-            MeshMaterial2d(material),
-            grid_pos.clone(),
-            transform,
-        ));
+        let mut entity_commands = commands.entity(entity);
+
+        match cell {
+            Cell::Leaf => {
+                let mesh = meshes.add(Ellipse::new(TILE_SIZE / 1.75, TILE_SIZE / 3.0));
+                let material = materials.add(ColorMaterial::from_color(CELL_GREEN));
+
+                entity_commands.insert((
+                    Mesh2d(mesh),
+                    MeshMaterial2d(material),
+                    grid_pos.clone(),
+                    transform,
+                ))
+            }
+            Cell::Antenna => {
+                let mesh = meshes.add(Circle::new(TILE_SIZE / 3.0));
+                let material = materials.add(ColorMaterial::from_color(CELL_BLUE));
+
+                entity_commands.insert((
+                    Mesh2d(mesh),
+                    MeshMaterial2d(material),
+                    grid_pos.clone(),
+                    transform,
+                ))
+            }
+            Cell::Root => {
+                let mesh = meshes.add(Rectangle::new(TILE_SIZE / 1.5, TILE_SIZE / 1.5));
+                let material = materials.add(ColorMaterial::from_color(CELL_ORANGE));
+
+                entity_commands.insert((
+                    Mesh2d(mesh),
+                    MeshMaterial2d(material),
+                    grid_pos.clone(),
+                    transform,
+                ))
+            }
+            Cell::Sprout => {
+                let mesh = meshes.add(Circle::new(TILE_SIZE / 3.0));
+                let material = materials.add(ColorMaterial::from_color(Color::WHITE));
+
+                let left_eye = meshes.add(Circle::new(TILE_SIZE / 15.0));
+                let right_eye = meshes.add(Circle::new(TILE_SIZE / 15.0));
+
+                entity_commands
+                    .insert((
+                        Mesh2d(mesh),
+                        MeshMaterial2d(material),
+                        grid_pos.clone(),
+                        transform,
+                    ))
+                    .with_child((
+                        Mesh2d(left_eye),
+                        MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::BLACK))),
+                        Transform::from_translation(Vec3::new(
+                            -TILE_SIZE / 6.0,
+                            TILE_SIZE / 6.0,
+                            2.0,
+                        )),
+                    ))
+                    .with_child((
+                        Mesh2d(right_eye),
+                        MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::BLACK))),
+                        Transform::from_translation(Vec3::new(
+                            TILE_SIZE / 6.0,
+                            TILE_SIZE / 6.0,
+                            2.0,
+                        )),
+                    ))
+            }
+            Cell::Branch => {
+                let mesh = meshes.add(Rectangle::new(TILE_SIZE / 1.5, TILE_SIZE / 6.0));
+                let material = materials.add(ColorMaterial::from_color(Color::WHITE));
+
+                entity_commands.insert((
+                    Mesh2d(mesh),
+                    MeshMaterial2d(material),
+                    grid_pos.clone(),
+                    transform,
+                ))
+            }
+            Cell::Seed(_) => {
+                let mesh = meshes.add(Circle::new(TILE_SIZE / 6.0));
+                let material = materials.add(ColorMaterial::from_color(Color::WHITE));
+
+                entity_commands.insert((
+                    Mesh2d(mesh),
+                    MeshMaterial2d(material),
+                    grid_pos.clone(),
+                    transform,
+                ))
+            }
+        };
+
+        entity_commands
+            .observe(observe_cell_hover)
+            .observe(observe_cell_out);
     }
+}
+
+fn update_last_hovered_cell_system(
+    mut cell_info_events: MessageReader<UpdateCellInfoMessage>,
+    mut last_hovered_cell: ResMut<LastHoveredCell>,
+) {
+    for UpdateCellInfoMessage { cell } in cell_info_events.read() {
+        last_hovered_cell.cell_info = cell.clone();
+    }
+}
+
+fn observe_cell_hover(
+    event: On<Pointer<Over>>,
+    mut writer: MessageWriter<UpdateCellInfoMessage>,
+    query: Query<(
+        &GridPosition,
+        &Cell,
+        &CellEnergy,
+        &FacingDirection,
+        &GenomeID,
+    )>,
+) {
+    let Ok((position, cell_type, energy, facing, genome_id)) = query.get(event.entity) else {
+        warn!("Received pointer over event for non-cell entity");
+        return;
+    };
+
+    writer.write(UpdateCellInfoMessage {
+        cell: Some(CellInfo {
+            position: position.clone(),
+            cell_type: *cell_type,
+            energy: *energy,
+            facing: *facing,
+            genome_id: *genome_id,
+        }),
+    });
+}
+
+fn observe_cell_out(
+    event: On<Pointer<Out>>,
+    mut writer: MessageWriter<UpdateCellInfoMessage>,
+    cells: Query<&Cell>,
+) {
+    let Ok(_) = cells.get(event.entity) else {
+        warn!("Received pointer out event for non-cell entity");
+        return;
+    };
+
+    writer.write(UpdateCellInfoMessage { cell: None });
 }

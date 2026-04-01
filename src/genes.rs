@@ -1,4 +1,5 @@
 use bevy::ecs::component::Component;
+use bevy::reflect::Reflect;
 use rand::distr::{Distribution, StandardUniform};
 use rand::seq::IndexedRandom;
 use rand::{Rng, RngExt};
@@ -19,8 +20,8 @@ pub enum GenomeError {
     InvalidGenomeID(usize),
 }
 
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GenomeID(usize);
+#[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GenomeID(pub usize);
 
 impl Distribution<GenomeID> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GenomeID {
