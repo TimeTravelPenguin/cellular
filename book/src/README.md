@@ -6,7 +6,7 @@ development process.
 
 The simulation is an implementation of the work by [Simulife Hub]. The
 inspiring project was originally implemented in the [Processing] software,
-using Java. This version takes a more complex approach, using the Bevy game
+using Java. This version takes a more complex approach, using the [Bevy] game
 engine, in Rust.
 
 The goal of this project is twofold:
