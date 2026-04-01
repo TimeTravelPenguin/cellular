@@ -1,5 +1,2 @@
-[default.extend-words]
-rust = "Rust"
-
 [default.extend-identifiers]
 consts = "consts"
