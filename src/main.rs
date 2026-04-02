@@ -449,7 +449,7 @@ fn toggle_grid_visibility_system(
     commands.remove_resource::<ToggleGridVisible>();
 }
 
-pub fn add_cell(mut commands: Commands) {
+pub fn add_test_cells(mut commands: Commands) {
     commands.spawn((
         Cell::Leaf,
         CellEnergy(100),
