@@ -128,8 +128,8 @@ fn main() {
     let json = serde_json::to_string_pretty(&x).unwrap();
     std::fs::write("genome_entry.json", json).unwrap();
 
-    let mut simulation_settings = SimulationSettings::default();
-    simulation_settings.initial_sprout_count = 1;
+    let simulation_settings = SimulationSettings::default();
+
     let environment = SimulationEnvironment::new(
         simulation_settings.grid_width,
         simulation_settings.grid_height,
@@ -213,8 +213,8 @@ fn cell_info_ui_system(
     mut contexts: EguiContexts,
     last_hovered_cell: Res<LastHoveredCell>,
 ) -> Result {
-    egui::Window::new("Closest Cell Info").show(contexts.ctx_mut()?, |ui| {
-        if let Some(cell) = last_hovered_cell.cell_info.as_ref() {
+    if let Some(cell) = last_hovered_cell.cell_info.as_ref() {
+        egui::Window::new("Cell Info").show(contexts.ctx_mut()?, |ui| {
             ui.label(format!(
                 "Position: ({}, {})",
                 cell.position.x, cell.position.y
@@ -223,8 +223,8 @@ fn cell_info_ui_system(
             ui.label(format!("Energy: {}", cell.energy.0));
             ui.label(format!("Facing: {:?}", cell.facing.0));
             ui.label(format!("Genome ID: {}", cell.genome_id.0));
-        }
-    });
+        });
+    }
 
     Ok(())
 }
