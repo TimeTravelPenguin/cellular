@@ -583,7 +583,7 @@ pub fn draw_cells_system(
                         Mesh2d(left_eye),
                         MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::BLACK))),
                         Transform::from_translation(Vec3::new(
-                            -TILE_SIZE / 6.0,
+                            TILE_SIZE / 6.0,
                             TILE_SIZE / 6.0,
                             2.0,
                         )),
@@ -593,7 +593,7 @@ pub fn draw_cells_system(
                         MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::BLACK))),
                         Transform::from_translation(Vec3::new(
                             TILE_SIZE / 6.0,
-                            TILE_SIZE / 6.0,
+                            -TILE_SIZE / 6.0,
                             2.0,
                         )),
                     ))
