@@ -17,10 +17,11 @@ use rand::RngExt;
 
 use crate::{
     cells::{
-        Cell, CellEnergy, Direction, FacingDirection, SeedCell, cell_transform, insert_cell_visual,
-        invoke_cell_actions_system, transfer_energy_system,
+        Cell, CellEnergy, Direction, FacingDirection, SeedCell, cell_collect_charge_energy_system,
+        cell_collect_organic_energy_system, cell_collect_solar_energy, cell_transform,
+        insert_cell_visual, invoke_cell_genome_actions_system, transfer_energy_system,
     },
-    energy::SimulationEnvironment,
+    energy::{ChargeEnergyEnvironment, OrganicEnergyEnvironment, SunlightCycle},
     genes::{Genome, GenomeEntry, GenomeID},
     input::{SimulationInputPlugin, observe_cell_hover, observe_cell_out},
 };
@@ -36,8 +37,12 @@ const TILE_SIZE: f32 = 10.0;
 const CELL_GREEN: Color = Color::linear_rgb(23.0 / 255.0, 185.0 / 255.0, 0.0 / 255.0);
 const CELL_ORANGE: Color = Color::linear_rgb(235.0 / 255.0, 138.0 / 255.0, 64.0 / 255.0);
 const CELL_BLUE: Color = Color::linear_rgb(82.0 / 255.0, 107.0 / 255.0, 1.0);
+const CELL_BROWN: Color = Color::linear_rgb(30.0 / 255.0, 20.0 / 255.0, 10.0 / 255.0);
 
-#[derive(Component, Reflect, Clone, Debug, PartialEq, Eq)]
+#[derive(Resource, Reflect, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SimulationStep(usize);
+
+#[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GridPosition {
     pub x: usize,
     pub y: usize,
@@ -130,11 +135,16 @@ fn main() {
 
     let simulation_settings = SimulationSettings::default();
 
-    let environment = SimulationEnvironment::new(
+    let organic_energy_env = OrganicEnergyEnvironment::new(
         simulation_settings.grid_width,
         simulation_settings.grid_height,
-        10,
-        10,
+        50,
+    );
+
+    let charge_energy_env = ChargeEnergyEnvironment::new(
+        simulation_settings.grid_width,
+        simulation_settings.grid_height,
+        20,
     );
 
     App::new()
@@ -162,7 +172,10 @@ fn main() {
             )),
         )
         .insert_resource(simulation_settings)
-        .insert_resource(environment)
+        .insert_resource(organic_energy_env)
+        .insert_resource(charge_energy_env)
+        .init_resource::<SunlightCycle>()
+        .init_resource::<SimulationStep>()
         .init_resource::<LastHoveredCell>()
         .add_message::<UpdateCellInfoMessage>()
         .add_systems(EguiPrimaryContextPass, cell_info_ui_system)
@@ -179,10 +192,20 @@ fn main() {
         .add_systems(
             Update,
             (
-                (invoke_cell_actions_system, transfer_energy_system).chain(),
+                (
+                    invoke_cell_genome_actions_system,
+                    transfer_energy_system,
+                    cell_collect_solar_energy,
+                    cell_collect_organic_energy_system,
+                    cell_collect_charge_energy_system,
+                )
+                    .chain(),
                 // shuffle_cells_system,
             ),
         )
+        .add_systems(PostUpdate, |mut step: ResMut<SimulationStep>| {
+            step.0 += 1;
+        })
         .run();
 }
 
@@ -231,6 +254,7 @@ fn initialize_sprouts_system(
     }
 
     for (x, y) in positions {
+        info!("Spawning initial sprout at ({}, {})", x, y);
         commands.spawn((
             Cell::Sprout,
             CellEnergy(10),
@@ -288,6 +312,7 @@ fn draw_world_grid_system(
             Vec2::new(world_x, grid_height - 0.5 * TILE_SIZE),
         );
 
+        info!("Drawing vertical grid line at x={}", world_x);
         commands.spawn((
             Mesh2d(meshes.add(mesh)),
             MeshMaterial2d(materials.add(ColorMaterial::from_color(line_color))),
@@ -305,6 +330,7 @@ fn draw_world_grid_system(
             Vec2::new(grid_width - 0.5 * TILE_SIZE, world_y),
         );
 
+        info!("Drawing horizontal grid line at y={}", world_y);
         commands.spawn((
             Mesh2d(meshes.add(mesh)),
             MeshMaterial2d(materials.add(ColorMaterial::from_color(line_color))),
@@ -316,6 +342,7 @@ fn draw_world_grid_system(
 }
 
 pub fn add_test_cells(mut commands: Commands) {
+    info!("Spawning test Leaf cell");
     commands.spawn((
         Cell::Leaf,
         CellEnergy(100),
@@ -325,6 +352,7 @@ pub fn add_test_cells(mut commands: Commands) {
         rand::rng().random::<GenomeID>(),
     ));
 
+    info!("Spawning test Antenna cell");
     commands.spawn((
         Cell::Antenna,
         CellEnergy(100),
@@ -334,6 +362,7 @@ pub fn add_test_cells(mut commands: Commands) {
         rand::rng().random::<GenomeID>(),
     ));
 
+    info!("Spawning test Sprout cell");
     commands.spawn((
         Cell::Sprout,
         CellEnergy(100),
@@ -343,6 +372,7 @@ pub fn add_test_cells(mut commands: Commands) {
         rand::rng().random::<GenomeID>(),
     ));
 
+    info!("Spawning test Root cell");
     commands.spawn((
         Cell::Root,
         CellEnergy(100),
@@ -352,6 +382,7 @@ pub fn add_test_cells(mut commands: Commands) {
         rand::rng().random::<GenomeID>(),
     ));
 
+    info!("Spawning test Branch cell");
     commands.spawn((
         Cell::Branch,
         CellEnergy(100),
@@ -361,6 +392,7 @@ pub fn add_test_cells(mut commands: Commands) {
         rand::rng().random::<GenomeID>(),
     ));
 
+    info!("Spawning test Dormant Seed cell");
     commands.spawn((
         Cell::Seed(SeedCell::DormantSeed),
         CellEnergy(100),
@@ -382,7 +414,7 @@ pub fn draw_cells_system(
         let spec = cell.visual_spec();
 
         info!(
-            "Drawing cell at ({}, {}) of type {:?}",
+            "Spawning cell at ({}, {}) of type {:?}",
             grid_pos.x, grid_pos.y, cell,
         );
 
@@ -391,7 +423,7 @@ pub fn draw_cells_system(
             &mut entity_commands,
             spec,
             transform,
-            grid_pos.clone(),
+            *grid_pos,
             &mut meshes,
             &mut materials,
         );

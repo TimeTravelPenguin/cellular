@@ -174,7 +174,7 @@ pub fn observe_cell_hover(
 
     writer.write(UpdateCellInfoMessage {
         cell: Some(CellInfo {
-            position: position.clone(),
+            position: *position,
             cell_type: *cell_type,
             energy: *energy,
             facing: *facing,

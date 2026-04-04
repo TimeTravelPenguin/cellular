@@ -1,5 +1,6 @@
 use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_rand::{global::GlobalRng, prelude::WyRand};
+use itertools::Itertools;
 use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
@@ -10,8 +11,11 @@ use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
 use crate::{
-    CELL_BLUE, CELL_GREEN, CELL_ORANGE, GridPosition, TILE_SIZE,
-    energy::SimulationEnvironment,
+    CELL_BLUE, CELL_BROWN, CELL_GREEN, CELL_ORANGE, GridPosition, SimulationStep, TILE_SIZE,
+    energy::{
+        ChargeEnergyEnvironment, EnergyEnvironmentTrait, OrganicEnergyEnvironment,
+        SunlightCycle,
+    },
     genes::{Genome, GenomeID, RelativeDirection},
 };
 
@@ -74,6 +78,15 @@ impl FacingDirection {
     }
 }
 
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+pub struct CellRequestSolarEnergy;
+
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+pub struct CellRequestOrganicEnergy(GridPosition);
+
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+pub struct CellRequestChargeEnergy(GridPosition);
+
 #[derive(Component, Reflect, Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct EnergyTransferer {
     pub north: Option<Entity>,
@@ -113,7 +126,7 @@ impl SeedCell {
     }
 }
 
-#[derive(Component, Reflect, Clone, Copy, Debug)]
+#[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CellEnergy(pub u32);
 
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,7 +198,7 @@ impl Cell {
                     width: TILE_SIZE * 1.5,
                     height: TILE_SIZE / 6.0,
                 },
-                color: Color::linear_rgb(30.0 / 255.0, 20.0 / 255.0, 10.0 / 255.0),
+                color: CELL_BROWN,
                 children: vec![],
             },
             Cell::Seed(_) => CellVisualSpec {
@@ -303,93 +316,92 @@ pub fn insert_cell_visual(
     });
 }
 
-// fn neighbouring_organic(
-//     environment: &ResMut<'_, SimulationEnvironment>,
-//     grid_pos: &GridPosition,
-//     neighbour_positions: &CellNeighbourPositions,
-//     cell_pos3x3: &[(usize, usize)],
-// ) -> NeighbouringEnergy {
-//     NeighbouringEnergy {
-//         forward: environment
-//             .organic(neighbour_positions.forward.0, neighbour_positions.forward.1)
-//             .unwrap_or(0),
-//         left: environment
-//             .organic(neighbour_positions.left.0, neighbour_positions.left.1)
-//             .unwrap_or(0),
-//         right: environment
-//             .organic(neighbour_positions.right.0, neighbour_positions.right.1)
-//             .unwrap_or(0),
-//         center: environment.organic(grid_pos.x, grid_pos.y).unwrap_or(0),
-//         total3x3: cell_pos3x3
-//             .iter()
-//             .map(|&pos| environment.organic(pos.0, pos.1).unwrap_or(0))
-//             .sum(),
-//     }
-// }
-//
-// fn neighbouring_charge(
-//     environment: &SimulationEnvironment,
-//     grid_pos: &GridPosition,
-//     neighbour_positions: &CellNeighbourPositions,
-//     cell_pos3x3: &[(usize, usize)],
-// ) -> NeighbouringEnergy {
-//     NeighbouringEnergy {
-//         forward: environment
-//             .charge(neighbour_positions.forward.0, neighbour_positions.forward.1)
-//             .unwrap_or(0),
-//         left: environment
-//             .charge(neighbour_positions.left.0, neighbour_positions.left.1)
-//             .unwrap_or(0),
-//         right: environment
-//             .charge(neighbour_positions.right.0, neighbour_positions.right.1)
-//             .unwrap_or(0),
-//         center: environment.charge(grid_pos.x, grid_pos.y).unwrap_or(0),
-//         total3x3: cell_pos3x3
-//             .iter()
-//             .map(|&pos| environment.charge(pos.0, pos.1).unwrap_or(0))
-//             .sum(),
-//     }
-// }
+pub fn cell_request_energy_system(
+    mut commands: Commands,
+    cells: Query<(Entity, &GridPosition, &Cell)>,
+) {
+    for (entity, grid_pos, cell) in cells.iter() {
+        match cell {
+            Cell::Leaf => commands.entity(entity).insert(CellRequestSolarEnergy),
+            Cell::Antenna => commands
+                .entity(entity)
+                .insert(CellRequestChargeEnergy(*grid_pos)),
+            Cell::Root => commands
+                .entity(entity)
+                .insert(CellRequestOrganicEnergy(*grid_pos)),
+            _ => unimplemented!("Energy requests for cell type {:?} not implemented", cell),
+        };
+    }
+}
 
-pub fn invoke_cell_actions_system(
+pub fn cell_collect_solar_energy(
+    mut query: Query<&mut CellEnergy, With<CellRequestSolarEnergy>>,
+    environment: Res<SunlightCycle>,
+    simulation_step: Res<SimulationStep>,
+) {
+    let sunlight = environment.sunlight(simulation_step.0 as f64);
+    for mut cell_energy in query.iter_mut() {
+        cell_energy.0 += sunlight as u32;
+    }
+}
+
+pub fn distribute_energy<'a, T: Resource + EnergyEnvironmentTrait>(
+    environment: &mut ResMut<T>,
+    energies: &mut [&mut Mut<'a, CellEnergy>],
+    grid_positions: &GridPosition,
+) {
+    let energy_per_cell = environment
+        .collect_split(grid_positions.x, grid_positions.y, energies.len())
+        .unwrap_or(0);
+
+    if energy_per_cell == 0 {
+        return;
+    }
+
+    for energy in energies {
+        energy.0 += energy_per_cell;
+    }
+}
+
+pub fn cell_collect_organic_energy_system(
+    mut query: Query<(&mut CellEnergy, &GridPosition), With<CellRequestOrganicEnergy>>,
+    mut environment: ResMut<OrganicEnergyEnvironment>,
+) {
+    for (grid_pos, mut energies) in query
+        .iter_mut()
+        .into_group_map_by(|(_, grid_pos)| **grid_pos)
+    {
+        let mut energy_refs = energies.iter_mut().map(|(energy, _)| energy).collect_vec();
+        distribute_energy(&mut environment, &mut energy_refs, &grid_pos);
+    }
+}
+
+pub fn cell_collect_charge_energy_system(
+    mut query: Query<(&mut CellEnergy, &GridPosition), With<CellRequestChargeEnergy>>,
+    mut environment: ResMut<ChargeEnergyEnvironment>,
+) {
+    for (grid_pos, mut energies) in query
+        .iter_mut()
+        .into_group_map_by(|(_, grid_pos)| **grid_pos)
+    {
+        let mut energy_refs = energies.iter_mut().map(|(energy, _)| energy).collect_vec();
+        distribute_energy(&mut environment, &mut energy_refs, &grid_pos);
+    }
+}
+
+pub fn invoke_cell_genome_actions_system(
     _commands: Commands,
     _rng: Single<&mut WyRand, With<GlobalRng>>,
     mut cells: Query<(
         &GridPosition,
         &Cell,
         &mut CellEnergy,
-        AnyOf<(&Genome, &mut GenomeID)>,
+        &Genome,
+        &mut GenomeID,
     )>,
-    mut environment: ResMut<SimulationEnvironment>,
-    time: Res<Time>,
 ) {
-    for (grid_pos, cell, mut cell_energy, (_genome, _genome_id)) in cells.iter_mut() {
-        match *cell {
-            Cell::Leaf => {
-                let energy = environment.sunlight(time.elapsed().as_secs());
-                cell_energy.0 += energy;
-            }
-            Cell::Root => {
-                let energy = environment
-                    .collect_organic(grid_pos.x, grid_pos.y)
-                    .unwrap_or(0);
-
-                cell_energy.0 += energy;
-            }
-
-            Cell::Antenna => {
-                let energy = environment
-                    .collect_charge(grid_pos.x, grid_pos.y)
-                    .unwrap_or(0);
-
-                cell_energy.0 += energy;
-            }
-            Cell::Branch => {
-                // TODO: Remove [transfer_energy_system] and add here to optimize
-            }
-            Cell::Sprout => {}           // TODO
-            Cell::Seed(_seed_cell) => {} // TODO
-        };
+    for (_grid_pos, _cell, _cell_energy, _genome, _genome_id) in cells.iter_mut() {
+        // TODO: Implement
     }
 }
 
@@ -433,5 +445,92 @@ pub fn transfer_energy_system(world: &mut World) {
             .expect("Entity should have CellEnergy component");
 
         cell_energy.0 += energy;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cell_collect_organic_energy_system() {
+        let mut world = World::new();
+
+        let initial_env = OrganicEnergyEnvironment::new(10, 10, 100);
+        world.insert_resource(initial_env);
+
+        let grid_pos = GridPosition { x: 5, y: 5 };
+        let cell_entity = world
+            .spawn((
+                Cell::Root,
+                grid_pos,
+                CellEnergy(0),
+                CellRequestOrganicEnergy(grid_pos),
+            ))
+            .id();
+
+        let system = world.register_system(cell_collect_organic_energy_system);
+        _ = world.run_system(system);
+
+        let cell_energy = *world
+            .entity(cell_entity)
+            .get::<CellEnergy>()
+            .expect("Cell should have CellEnergy component");
+
+        let mut updated_env = world
+            .get_resource_mut::<OrganicEnergyEnvironment>()
+            .expect("Should have OrganicEnergyEnvironment resource");
+
+        assert_eq!(cell_energy.0, 100);
+        assert_eq!(updated_env.collect(grid_pos.x, grid_pos.y), Some(0));
+    }
+
+    #[test]
+    fn test_cell_collect_organic_energy_split_system() {
+        let mut world = World::new();
+
+        let initial_env = OrganicEnergyEnvironment::new(10, 10, 113);
+        world.insert_resource(initial_env);
+
+        let grid_pos = GridPosition { x: 5, y: 5 };
+        let cell_entity_first = world
+            .spawn((
+                Cell::Root,
+                grid_pos,
+                CellEnergy(0),
+                CellRequestOrganicEnergy(grid_pos),
+            ))
+            .id();
+
+        let cell_entity_second = world
+            .spawn((
+                Cell::Root,
+                grid_pos,
+                CellEnergy(3),
+                CellRequestOrganicEnergy(grid_pos),
+            ))
+            .id();
+
+        let system = world.register_system(cell_collect_organic_energy_system);
+        _ = world.run_system(system);
+
+        let first_cell_energy = *world
+            .entity(cell_entity_first)
+            .get::<CellEnergy>()
+            .expect("Cell should have CellEnergy component");
+
+        let second_cell_energy = *world
+            .entity(cell_entity_second)
+            .get::<CellEnergy>()
+            .expect("Cell should have CellEnergy component");
+
+        let mut updated_env = world
+            .get_resource_mut::<OrganicEnergyEnvironment>()
+            .expect("Should have OrganicEnergyEnvironment resource");
+
+        assert_eq!(first_cell_energy.0, 56);
+        assert_eq!(second_cell_energy.0, 59);
+        assert_eq!(updated_env.collect(grid_pos.x, grid_pos.y), Some(1));
+        assert_eq!(updated_env.collect(grid_pos.x, grid_pos.y), Some(0));
     }
 }

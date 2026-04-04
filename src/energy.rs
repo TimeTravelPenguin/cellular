@@ -1,5 +1,4 @@
 use bevy::{ecs::resource::Resource, reflect::Reflect};
-use bevy_egui::egui::emath::Numeric;
 
 #[inline]
 pub fn index(width: usize, x: usize, y: usize) -> usize {
@@ -22,8 +21,8 @@ pub struct NeighbouringEnergy {
     pub total3x3: u32,
 }
 
-#[derive(Clone, Debug)]
-struct SunlightCycle {
+#[derive(Resource, Reflect, Clone, Debug)]
+pub struct SunlightCycle {
     period: f64,
     min_sunlight: f64,
     max_sunlight: f64,
@@ -33,7 +32,25 @@ struct SunlightCycle {
     body_coefficient: f64,
 }
 
+impl Default for SunlightCycle {
+    fn default() -> Self {
+        SunlightCycle::new(
+            Self::SUNLIGHT_PERIOD,
+            Self::MIN_SUNLIGHT,
+            Self::MAX_SUNLIGHT,
+            Self::SUNLIGHT_OFFSET,
+            Self::INITIAL_SUNLIGHT,
+        )
+    }
+}
+
 impl SunlightCycle {
+    const INITIAL_SUNLIGHT: f64 = 20.0;
+    const MIN_SUNLIGHT: f64 = 1.0;
+    const MAX_SUNLIGHT: f64 = 10.0;
+    const SUNLIGHT_OFFSET: f64 = 50.0;
+    const SUNLIGHT_PERIOD: f64 = 30.0;
+
     pub fn new(
         period: f64,
         min_sunlight: f64,
@@ -73,64 +90,90 @@ impl SunlightCycle {
     }
 }
 
-#[derive(Resource, Clone, Debug)]
-pub struct SimulationEnvironment {
-    width: usize,
-    height: usize,
-    sunlight_cycle: SunlightCycle,
-    organic_matter: Vec<u32>,
-    charge: Vec<u32>,
+#[derive(Resource, Reflect, Clone, Debug)]
+pub struct OrganicEnergyEnvironment(EnergyEnvironment);
+
+impl OrganicEnergyEnvironment {
+    pub fn new(width: usize, height: usize, initial_energy: u32) -> Self {
+        OrganicEnergyEnvironment(EnergyEnvironment::new(width, height, initial_energy))
+    }
 }
 
-impl SimulationEnvironment {
-    const INITIAL_SUNLIGHT: f64 = 20.0;
-    const MIN_SUNLIGHT: f64 = 1.0;
-    const MAX_SUNLIGHT: f64 = 10.0;
-    const SUNLIGHT_OFFSET: f64 = 50.0;
-    const SUNLIGHT_PERIOD: f64 = 30.0;
+#[derive(Resource, Reflect, Clone, Debug)]
+pub struct ChargeEnergyEnvironment(EnergyEnvironment);
 
-    pub fn new(
-        width: usize,
-        height: usize,
-        initial_organic_matter: u32,
-        initial_charge: u32,
-    ) -> Self {
-        SimulationEnvironment {
+impl ChargeEnergyEnvironment {
+    pub fn new(width: usize, height: usize, initial_energy: u32) -> Self {
+        ChargeEnergyEnvironment(EnergyEnvironment::new(width, height, initial_energy))
+    }
+}
+
+#[derive(Reflect, Clone, Debug)]
+pub struct EnergyEnvironment {
+    width: usize,
+    height: usize,
+    energy: Vec<u32>,
+}
+
+impl EnergyEnvironment {
+    pub fn new(width: usize, height: usize, initial_energy: u32) -> Self {
+        EnergyEnvironment {
             width,
             height,
-            sunlight_cycle: SunlightCycle::new(
-                Self::SUNLIGHT_PERIOD,
-                Self::MIN_SUNLIGHT,
-                Self::MAX_SUNLIGHT,
-                Self::SUNLIGHT_OFFSET,
-                Self::INITIAL_SUNLIGHT,
-            ),
-            organic_matter: vec![initial_organic_matter; width * height],
-            charge: vec![initial_charge; width * height],
+            energy: vec![initial_energy; width * height],
         }
     }
 
-    pub fn collect_organic(&mut self, x: usize, y: usize) -> Option<u32> {
-        let amount = self.organic_matter.get_mut(index(self.width, x, y))?;
+    pub fn collect(&mut self, x: usize, y: usize) -> Option<u32> {
+        let idx = index(self.width, x, y);
+        let amount = self.energy.get_mut(idx)?;
+        let taken = *amount;
+        *amount = 0;
 
-        if *amount > 0 {
-            *amount = amount.saturating_sub(1);
-        }
-
-        Some(*amount)
+        Some(taken)
     }
 
-    pub fn collect_charge(&mut self, x: usize, y: usize) -> Option<u32> {
-        let amount = self.charge.get_mut(index(self.width, x, y))?;
+    pub fn collect_split(&mut self, x: usize, y: usize, split: usize) -> Option<u32> {
+        let idx = index(self.width, x, y);
+        let amount = self.energy.get_mut(idx)?;
+        let collected = *amount / split as u32;
+        *amount -= collected * split as u32;
 
-        if *amount > 0 {
-            *amount = amount.saturating_sub(1);
-        }
+        Some(collected)
+    }
+}
 
-        Some(*amount)
+pub trait EnergyEnvironmentTrait {
+    fn collect(&mut self, x: usize, y: usize) -> Option<u32>;
+    fn collect_split(&mut self, x: usize, y: usize, split: usize) -> Option<u32>;
+}
+
+impl EnergyEnvironmentTrait for EnergyEnvironment {
+    fn collect(&mut self, x: usize, y: usize) -> Option<u32> {
+        self.collect(x, y)
     }
 
-    pub fn sunlight(&self, t: u64) -> u32 {
-        self.sunlight_cycle.sunlight(t.to_f64()).round() as u32
+    fn collect_split(&mut self, x: usize, y: usize, split: usize) -> Option<u32> {
+        self.collect_split(x, y, split)
+    }
+}
+
+impl EnergyEnvironmentTrait for OrganicEnergyEnvironment {
+    fn collect(&mut self, x: usize, y: usize) -> Option<u32> {
+        self.0.collect(x, y)
+    }
+
+    fn collect_split(&mut self, x: usize, y: usize, split: usize) -> Option<u32> {
+        self.0.collect_split(x, y, split)
+    }
+}
+
+impl EnergyEnvironmentTrait for ChargeEnergyEnvironment {
+    fn collect(&mut self, x: usize, y: usize) -> Option<u32> {
+        self.0.collect(x, y)
+    }
+
+    fn collect_split(&mut self, x: usize, y: usize, split: usize) -> Option<u32> {
+        self.0.collect_split(x, y, split)
     }
 }
