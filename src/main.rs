@@ -511,168 +511,27 @@ pub fn draw_cells_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    for (entity, grid_pos, facing_direction, cell) in cells.iter() {
-        let world_x = grid_pos.x as f32 * TILE_SIZE;
-        let world_y = grid_pos.y as f32 * TILE_SIZE;
+    for (entity, grid_pos, facing_direction, cell) in &cells {
+        let transform = cell_transform(grid_pos, facing_direction.0);
+        let spec = cell.visual_spec();
 
-        let mut transform = Transform::from_translation(Vec3::new(world_x, world_y, 1.0));
+        info!(
+            "Drawing cell at ({}, {}) of type {:?}",
+            grid_pos.x, grid_pos.y, cell,
+        );
 
-        match facing_direction.0 {
-            Direction::East => {}
-            Direction::South => {
-                transform.rotation = Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2)
-            }
-            Direction::West => transform.rotation = Quat::from_rotation_z(std::f32::consts::PI),
-            Direction::North => {
-                transform.rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)
-            }
-        }
-
-        info!("Drawing cell at grid ({}, {})", grid_pos.x, grid_pos.y);
         let mut entity_commands = commands.entity(entity);
-
-        match cell {
-            Cell::Leaf => {
-                let mesh = meshes.add(Ellipse::new(TILE_SIZE / 1.75, TILE_SIZE / 3.0));
-                let material = materials.add(ColorMaterial::from_color(CELL_GREEN));
-
-                entity_commands.insert((
-                    Mesh2d(mesh),
-                    MeshMaterial2d(material),
-                    grid_pos.clone(),
-                    transform,
-                ))
-            }
-            Cell::Antenna => {
-                let mesh = meshes.add(Circle::new(TILE_SIZE / 3.0));
-                let material = materials.add(ColorMaterial::from_color(CELL_BLUE));
-
-                entity_commands.insert((
-                    Mesh2d(mesh),
-                    MeshMaterial2d(material),
-                    grid_pos.clone(),
-                    transform,
-                ))
-            }
-            Cell::Root => {
-                let mesh = meshes.add(Rectangle::new(TILE_SIZE / 1.5, TILE_SIZE / 1.5));
-                let material = materials.add(ColorMaterial::from_color(CELL_ORANGE));
-
-                entity_commands.insert((
-                    Mesh2d(mesh),
-                    MeshMaterial2d(material),
-                    grid_pos.clone(),
-                    transform,
-                ))
-            }
-            Cell::Sprout => {
-                let mesh = meshes.add(Circle::new(TILE_SIZE / 3.0));
-                let material = materials.add(ColorMaterial::from_color(Color::WHITE));
-
-                let left_eye = meshes.add(Circle::new(TILE_SIZE / 15.0));
-                let right_eye = meshes.add(Circle::new(TILE_SIZE / 15.0));
-
-                entity_commands
-                    .insert((
-                        Mesh2d(mesh),
-                        MeshMaterial2d(material),
-                        grid_pos.clone(),
-                        transform,
-                    ))
-                    .with_child((
-                        Mesh2d(left_eye),
-                        MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::BLACK))),
-                        Transform::from_translation(Vec3::new(
-                            TILE_SIZE / 6.0,
-                            TILE_SIZE / 6.0,
-                            2.0,
-                        )),
-                    ))
-                    .with_child((
-                        Mesh2d(right_eye),
-                        MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::BLACK))),
-                        Transform::from_translation(Vec3::new(
-                            TILE_SIZE / 6.0,
-                            -TILE_SIZE / 6.0,
-                            2.0,
-                        )),
-                    ))
-            }
-            Cell::Branch => {
-                let mesh = meshes.add(Rectangle::new(TILE_SIZE / 1.5, TILE_SIZE / 6.0));
-                let material = materials.add(ColorMaterial::from_color(Color::WHITE));
-
-                entity_commands.insert((
-                    Mesh2d(mesh),
-                    MeshMaterial2d(material),
-                    grid_pos.clone(),
-                    transform,
-                ))
-            }
-            Cell::Seed(_) => {
-                let mesh = meshes.add(Circle::new(TILE_SIZE / 6.0));
-                let material = materials.add(ColorMaterial::from_color(Color::WHITE));
-
-                entity_commands.insert((
-                    Mesh2d(mesh),
-                    MeshMaterial2d(material),
-                    grid_pos.clone(),
-                    transform,
-                ))
-            }
-        };
+        insert_cell_visual(
+            &mut entity_commands,
+            spec,
+            transform,
+            grid_pos.clone(),
+            &mut meshes,
+            &mut materials,
+        );
 
         entity_commands
             .observe(observe_cell_hover)
             .observe(observe_cell_out);
     }
-}
-
-fn update_last_hovered_cell_system(
-    mut cell_info_events: MessageReader<UpdateCellInfoMessage>,
-    mut last_hovered_cell: ResMut<LastHoveredCell>,
-) {
-    for UpdateCellInfoMessage { cell } in cell_info_events.read() {
-        last_hovered_cell.cell_info = cell.clone();
-    }
-}
-
-fn observe_cell_hover(
-    event: On<Pointer<Over>>,
-    mut writer: MessageWriter<UpdateCellInfoMessage>,
-    query: Query<(
-        &GridPosition,
-        &Cell,
-        &CellEnergy,
-        &FacingDirection,
-        &GenomeID,
-    )>,
-) {
-    let Ok((position, cell_type, energy, facing, genome_id)) = query.get(event.entity) else {
-        warn!("Received pointer over event for non-cell entity");
-        return;
-    };
-
-    writer.write(UpdateCellInfoMessage {
-        cell: Some(CellInfo {
-            position: position.clone(),
-            cell_type: *cell_type,
-            energy: *energy,
-            facing: *facing,
-            genome_id: *genome_id,
-        }),
-    });
-}
-
-fn observe_cell_out(
-    event: On<Pointer<Out>>,
-    mut writer: MessageWriter<UpdateCellInfoMessage>,
-    cells: Query<&Cell>,
-) {
-    let Ok(_) = cells.get(event.entity) else {
-        warn!("Received pointer out event for non-cell entity");
-        return;
-    };
-
-    writer.write(UpdateCellInfoMessage { cell: None });
 }

@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
 use crate::{
-    GridPosition,
-    energy::{Energy, SimulationEnvironment},
-    genes::{CellGenomeCommand, Genome, GenomeID, RelativeDirection},
+    CELL_BLUE, CELL_GREEN, CELL_ORANGE, GridPosition, TILE_SIZE,
+    energy::SimulationEnvironment,
+    genes::{Genome, GenomeID, RelativeDirection},
 };
 
 #[derive(Reflect, VariantArray, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -130,6 +130,177 @@ impl Cell {
     pub fn is_consumable(&self) -> bool {
         matches!(self, Cell::Seed(_) | Cell::Leaf | Cell::Sprout)
     }
+
+    /// Returns the visual specification for this cell type, including its
+    /// shape, color, and any child visuals.
+    pub fn visual_spec(&self) -> CellVisualSpec {
+        match self {
+            Cell::Leaf => CellVisualSpec {
+                shape: ShapeSpec::Ellipse {
+                    half_width: TILE_SIZE / 1.75,
+                    half_height: TILE_SIZE / 3.0,
+                },
+                color: CELL_GREEN,
+                children: vec![],
+            },
+            Cell::Antenna => CellVisualSpec {
+                shape: ShapeSpec::Circle(TILE_SIZE / 3.0),
+                color: CELL_BLUE,
+                children: vec![],
+            },
+            Cell::Root => CellVisualSpec {
+                shape: ShapeSpec::Rect {
+                    width: TILE_SIZE / 1.5,
+                    height: TILE_SIZE / 1.5,
+                },
+                color: CELL_ORANGE,
+                children: vec![],
+            },
+            Cell::Sprout => CellVisualSpec {
+                shape: ShapeSpec::Circle(TILE_SIZE / 3.0),
+                color: Color::WHITE,
+                children: vec![
+                    ChildVisualSpec {
+                        shape: ShapeSpec::Circle(TILE_SIZE / 15.0),
+                        color: Color::BLACK,
+                        transform: Transform::from_translation(Vec3::new(
+                            TILE_SIZE / 6.0,
+                            TILE_SIZE / 6.0,
+                            2.0,
+                        )),
+                    },
+                    ChildVisualSpec {
+                        shape: ShapeSpec::Circle(TILE_SIZE / 15.0),
+                        color: Color::BLACK,
+                        transform: Transform::from_translation(Vec3::new(
+                            TILE_SIZE / 6.0,
+                            -TILE_SIZE / 6.0,
+                            2.0,
+                        )),
+                    },
+                ],
+            },
+            Cell::Branch => CellVisualSpec {
+                shape: ShapeSpec::Rect {
+                    width: TILE_SIZE * 1.5,
+                    height: TILE_SIZE / 6.0,
+                },
+                color: Color::linear_rgb(30.0 / 255.0, 20.0 / 255.0, 10.0 / 255.0),
+                children: vec![],
+            },
+            Cell::Seed(_) => CellVisualSpec {
+                shape: ShapeSpec::Circle(TILE_SIZE / 6.0),
+                color: Color::WHITE,
+                children: vec![],
+            },
+        }
+    }
+}
+
+/// Bundle for rendering a cell.
+#[derive(Bundle)]
+pub struct CellRenderBundle {
+    mesh: Mesh2d,
+    material: MeshMaterial2d<ColorMaterial>,
+    transform: Transform,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ShapeSpec {
+    Circle(f32),
+    Ellipse { half_width: f32, half_height: f32 },
+    Rect { width: f32, height: f32 },
+}
+
+impl ShapeSpec {
+    pub fn into_mesh(self, meshes: &mut Assets<Mesh>) -> Mesh2d {
+        let handle = match self {
+            ShapeSpec::Circle(r) => meshes.add(Circle::new(r)),
+            ShapeSpec::Ellipse {
+                half_width,
+                half_height,
+            } => meshes.add(Ellipse::new(half_width, half_height)),
+            ShapeSpec::Rect { width, height } => meshes.add(Rectangle::new(width, height)),
+        };
+
+        Mesh2d(handle)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ChildVisualSpec {
+    shape: ShapeSpec,
+    color: Color,
+    transform: Transform,
+}
+
+/// Visual specification for a cell, including its shape, color, and any child
+/// visuals (e.g., for details like eyes).
+#[derive(Clone, Debug)]
+pub struct CellVisualSpec {
+    shape: ShapeSpec,
+    color: Color,
+    children: Vec<ChildVisualSpec>,
+}
+
+fn facing_rotation(direction: Direction) -> Quat {
+    match direction {
+        Direction::East => Quat::IDENTITY,
+        Direction::South => Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2),
+        Direction::West => Quat::from_rotation_z(std::f32::consts::PI),
+        Direction::North => Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
+    }
+}
+
+#[inline]
+const fn grid_pos_to_world_pos(grid_pos: &GridPosition) -> Vec3 {
+    let world_x = grid_pos.x as f32 * TILE_SIZE;
+    let world_y = grid_pos.y as f32 * TILE_SIZE;
+
+    Vec3::new(world_x, world_y, 1.0)
+}
+
+/// Computes the world transform for a cell based on its grid position and facing direction.
+pub fn cell_transform(grid_pos: &GridPosition, facing: Direction) -> Transform {
+    let translation = grid_pos_to_world_pos(grid_pos);
+
+    Transform {
+        translation,
+        rotation: facing_rotation(facing),
+        ..default()
+    }
+}
+
+/// Inserts the necessary components to render a cell based on its visual specification.
+pub fn insert_cell_visual(
+    entity_commands: &mut EntityCommands,
+    spec: CellVisualSpec,
+    transform: Transform,
+    grid_pos: GridPosition,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+) {
+    let mesh = spec.shape.into_mesh(meshes);
+    let material = MeshMaterial2d(materials.add(ColorMaterial::from_color(spec.color)));
+
+    entity_commands.insert((
+        CellRenderBundle {
+            mesh,
+            material,
+            transform,
+        },
+        grid_pos,
+    ));
+
+    entity_commands.with_children(|parent| {
+        for child in spec.children {
+            parent.spawn(CellRenderBundle {
+                mesh: child.shape.into_mesh(meshes),
+                material: MeshMaterial2d(materials.add(ColorMaterial::from_color(child.color))),
+                transform: child.transform,
+            });
+        }
+    });
 }
 
 // fn neighbouring_organic(
@@ -192,7 +363,7 @@ pub fn invoke_cell_actions_system(
     mut environment: ResMut<SimulationEnvironment>,
     time: Res<Time>,
 ) {
-    for (grid_pos, cell, mut cell_energy, (genome, mut genome_id)) in cells.iter_mut() {
+    for (grid_pos, cell, mut cell_energy, (_genome, _genome_id)) in cells.iter_mut() {
         match *cell {
             Cell::Leaf => {
                 let energy = environment.sunlight(time.elapsed().as_secs());
