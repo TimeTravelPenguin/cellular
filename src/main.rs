@@ -5,8 +5,6 @@ use std::f32;
 use avian2d::{self, PhysicsPlugins};
 use bevy::{
     dev_tools::picking_debug::{DebugPickingMode, DebugPickingPlugin},
-    ecs::message::MessageReader,
-    input::mouse::{MouseScrollUnit, MouseWheel},
     platform::collections::HashSet,
     prelude::*,
 };
@@ -19,17 +17,19 @@ use rand::RngExt;
 
 use crate::{
     cells::{
-        Cell, CellEnergy, Direction, FacingDirection, SeedCell, invoke_cell_actions_system,
-        transfer_energy_system,
+        Cell, CellEnergy, Direction, FacingDirection, SeedCell, cell_transform, insert_cell_visual,
+        invoke_cell_actions_system, transfer_energy_system,
     },
     energy::SimulationEnvironment,
     genes::{Genome, GenomeEntry, GenomeID},
+    input::{SimulationInputPlugin, observe_cell_hover, observe_cell_out},
 };
 
 mod cells;
 mod cli;
 mod energy;
 mod genes;
+mod input;
 mod simulation;
 
 const TILE_SIZE: f32 = 10.0;
@@ -145,6 +145,7 @@ fn main() {
             EntropyPlugin::<WyRand>::default(),
             PhysicsPlugins::default(),
             EguiPlugin::default(),
+            SimulationInputPlugin,
         ))
         .insert_resource(DebugPickingMode::Normal)
         .add_systems(
@@ -169,26 +170,12 @@ fn main() {
             Startup,
             (
                 setup_camera_system,
-                initialize_sprouts_system,
+                // initialize_sprouts_system,
                 draw_world_grid_system,
-                // add_cell,
+                add_test_cells,
             ),
         )
-        .add_systems(
-            PreUpdate,
-            (
-                toggle_grid_visibility_system.run_if(resource_exists::<ToggleGridVisible>),
-                update_last_hovered_cell_system,
-            ),
-        )
-        .add_systems(
-            Update,
-            (
-                move_camera_system,
-                process_keyboard_system,
-                draw_cells_system,
-            ),
-        )
+        .add_systems(Update, (draw_cells_system,))
         .add_systems(
             Update,
             (
@@ -282,116 +269,6 @@ fn shuffle_cells_system(
     }
 }
 
-fn process_keyboard_system(
-    mut commands: Commands,
-    mut simulation_settings: ResMut<SimulationSettings>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-) {
-    if keyboard.just_pressed(KeyCode::KeyG) {
-        info!("Switched to Grid view");
-        simulation_settings.view = SimulationView::Grid;
-    } else if keyboard.just_pressed(KeyCode::KeyO) {
-        info!("Switched to Organic Energy view");
-        simulation_settings.view = SimulationView::OrganicEnergy;
-    } else if keyboard.just_pressed(KeyCode::KeyC) {
-        info!("Switched to Charge Energy view");
-        simulation_settings.view = SimulationView::ChargeEnergy;
-    } else if keyboard.just_pressed(KeyCode::Tab) && !keyboard.pressed(KeyCode::ShiftLeft) {
-        info!("Cycled view forward");
-        simulation_settings.view = match simulation_settings.view {
-            SimulationView::Grid => SimulationView::OrganicEnergy,
-            SimulationView::OrganicEnergy => SimulationView::ChargeEnergy,
-            SimulationView::ChargeEnergy => SimulationView::Grid,
-        };
-    } else if keyboard.just_pressed(KeyCode::Tab) && keyboard.pressed(KeyCode::ShiftLeft) {
-        info!("Cycled view backward");
-        simulation_settings.view = match simulation_settings.view {
-            SimulationView::Grid => SimulationView::ChargeEnergy,
-            SimulationView::OrganicEnergy => SimulationView::Grid,
-            SimulationView::ChargeEnergy => SimulationView::OrganicEnergy,
-        };
-    }
-
-    if keyboard.just_pressed(KeyCode::KeyH) {
-        info!("Toggled grid visibility");
-        commands.insert_resource(ToggleGridVisible);
-    }
-
-    if keyboard.just_pressed(KeyCode::Equal) {
-        simulation_settings.speed_multiplier += 0.5;
-        info!(
-            "Increased simulation speed to {}x",
-            simulation_settings.speed_multiplier
-        );
-    } else if keyboard.just_pressed(KeyCode::Minus) {
-        simulation_settings.speed_multiplier =
-            (simulation_settings.speed_multiplier - 0.5).max(0.5);
-        info!(
-            "Decreased simulation speed to {}x",
-            simulation_settings.speed_multiplier
-        );
-    }
-}
-
-fn move_camera_system(
-    time: Res<Time>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mouse_button: Res<ButtonInput<MouseButton>>,
-    mut cursor_events: MessageReader<CursorMoved>,
-    mut scroll_events: MessageReader<MouseWheel>,
-    mut transform: Single<&mut Transform, With<Camera2d>>,
-    mut last_cursor_pos: Local<Option<Vec2>>,
-) {
-    let scale = transform.scale.x;
-    let speed = 500.0 * scale * time.delta_secs();
-
-    // WASD movement
-    let mut direction = Vec3::ZERO;
-    if keyboard.pressed(KeyCode::KeyW) {
-        direction.y += 1.0;
-    }
-    if keyboard.pressed(KeyCode::KeyS) {
-        direction.y -= 1.0;
-    }
-    if keyboard.pressed(KeyCode::KeyA) {
-        direction.x -= 1.0;
-    }
-    if keyboard.pressed(KeyCode::KeyD) {
-        direction.x += 1.0;
-    }
-    if direction != Vec3::ZERO {
-        transform.translation += direction.normalize() * speed;
-    }
-
-    // Mouse drag panning
-    if mouse_button.pressed(MouseButton::Left) {
-        for event in cursor_events.read() {
-            if let Some(last_pos) = *last_cursor_pos {
-                let delta = event.position - last_pos;
-                transform.translation.x -= delta.x * scale;
-                transform.translation.y += delta.y * scale;
-            }
-            *last_cursor_pos = Some(event.position);
-        }
-    } else {
-        for event in cursor_events.read() {
-            *last_cursor_pos = Some(event.position);
-        }
-    }
-
-    // Scroll wheel zoom
-    for event in scroll_events.read() {
-        let scroll_amount = match event.unit {
-            MouseScrollUnit::Line => event.y,
-            MouseScrollUnit::Pixel => event.y / 100.0,
-        };
-
-        let zoom_factor = 1.0 - scroll_amount * 0.1;
-        transform.scale *= Vec3::splat(zoom_factor);
-        transform.scale = transform.scale.clamp(Vec3::splat(0.05), Vec3::splat(5.0));
-    }
-}
-
 fn draw_world_grid_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -436,17 +313,6 @@ fn draw_world_grid_system(
             Grid,
         ));
     }
-}
-
-fn toggle_grid_visibility_system(
-    mut commands: Commands,
-    mut query: Query<&mut Visibility, With<Grid>>,
-) {
-    for mut visibility in query.iter_mut() {
-        visibility.toggle_visible_hidden();
-    }
-
-    commands.remove_resource::<ToggleGridVisible>();
 }
 
 pub fn add_test_cells(mut commands: Commands) {
