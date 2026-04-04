@@ -1,4 +1,18 @@
-use bevy::{ecs::resource::Resource, reflect::Reflect};
+use bevy::{
+    app::{App, MainScheduleOrder, Plugin, Update},
+    ecs::{
+        resource::Resource,
+        schedule::{Schedule, ScheduleLabel},
+        system::ResMut,
+    },
+    prelude::{Deref, DerefMut},
+    reflect::Reflect,
+};
+use log::info;
+
+pub const ORGANIC_TOXICICITY_LEVEL: u32 = 100;
+pub const CHARGE_TOXICITY_LEVEL: u32 = 90;
+pub const CHARGE_LIMIT: u32 = 100;
 
 #[inline]
 pub fn index(width: usize, x: usize, y: usize) -> usize {
@@ -90,7 +104,7 @@ impl SunlightCycle {
     }
 }
 
-#[derive(Resource, Reflect, Clone, Debug)]
+#[derive(Resource, Reflect, Clone, Debug, Deref, DerefMut)]
 pub struct OrganicEnergyEnvironment(EnergyEnvironment);
 
 impl OrganicEnergyEnvironment {
@@ -99,12 +113,50 @@ impl OrganicEnergyEnvironment {
     }
 }
 
-#[derive(Resource, Reflect, Clone, Debug)]
+#[derive(Resource, Reflect, Clone, Debug, Deref, DerefMut)]
 pub struct ChargeEnergyEnvironment(EnergyEnvironment);
+
+#[inline]
+fn euler_ode_approx(
+    f: impl Fn(f64, f64) -> f64,
+    x0: f64,
+    y0: f64,
+    dt: f64,
+    steps: usize,
+) -> (f64, f64) {
+    let mut x = x0;
+    let mut y = y0;
+
+    for n in 0..steps {
+        y += f(x, y) * dt;
+        x = x0 + n as f64 * dt;
+    }
+
+    (x, y)
+}
+
+#[inline]
+fn logistic_growth(_t: f64, y: f64) -> f64 {
+    const R: f64 = 0.5;
+    R * y * (1.0 - y / CHARGE_LIMIT as f64)
+}
 
 impl ChargeEnergyEnvironment {
     pub fn new(width: usize, height: usize, initial_energy: u32) -> Self {
         ChargeEnergyEnvironment(EnergyEnvironment::new(width, height, initial_energy))
+    }
+
+    pub fn charge(&mut self) -> &mut Self {
+        // Charge follows y' = r * y * (1 - y / CHARGE_LIMIT)
+
+        info!("Charging environment");
+        for e in self.0.energy.iter_mut() {
+            let (_, new_energy) =
+                euler_ode_approx(logistic_growth, 0.0, (*e as f64).max(1.0), 0.5, 1);
+            *e = new_energy.round() as u32;
+        }
+
+        self
     }
 }
 
@@ -141,11 +193,17 @@ impl EnergyEnvironment {
 
         Some(collected)
     }
+
+    pub fn peek(&self, x: usize, y: usize) -> Option<u32> {
+        let idx = index(self.width, x, y);
+        self.energy.get(idx).copied()
+    }
 }
 
 pub trait EnergyEnvironmentTrait {
     fn collect(&mut self, x: usize, y: usize) -> Option<u32>;
     fn collect_split(&mut self, x: usize, y: usize, split: usize) -> Option<u32>;
+    fn peek(&self, x: usize, y: usize) -> Option<u32>;
 }
 
 impl EnergyEnvironmentTrait for EnergyEnvironment {
@@ -155,6 +213,10 @@ impl EnergyEnvironmentTrait for EnergyEnvironment {
 
     fn collect_split(&mut self, x: usize, y: usize, split: usize) -> Option<u32> {
         self.collect_split(x, y, split)
+    }
+
+    fn peek(&self, x: usize, y: usize) -> Option<u32> {
+        self.peek(x, y)
     }
 }
 
@@ -166,6 +228,10 @@ impl EnergyEnvironmentTrait for OrganicEnergyEnvironment {
     fn collect_split(&mut self, x: usize, y: usize, split: usize) -> Option<u32> {
         self.0.collect_split(x, y, split)
     }
+
+    fn peek(&self, x: usize, y: usize) -> Option<u32> {
+        self.0.peek(x, y)
+    }
 }
 
 impl EnergyEnvironmentTrait for ChargeEnergyEnvironment {
@@ -176,4 +242,12 @@ impl EnergyEnvironmentTrait for ChargeEnergyEnvironment {
     fn collect_split(&mut self, x: usize, y: usize, split: usize) -> Option<u32> {
         self.0.collect_split(x, y, split)
     }
+
+    fn peek(&self, x: usize, y: usize) -> Option<u32> {
+        self.0.peek(x, y)
+    }
+}
+
+pub fn charge_energy_system(mut charge_env: ResMut<ChargeEnergyEnvironment>) {
+    charge_env.charge();
 }

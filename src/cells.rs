@@ -13,10 +13,14 @@ use strum::VariantArray;
 use crate::{
     CELL_BLUE, CELL_BROWN, CELL_GREEN, CELL_ORANGE, GridPosition, SimulationStep, TILE_SIZE,
     energy::{
-        ChargeEnergyEnvironment, EnergyEnvironmentTrait, OrganicEnergyEnvironment, SunlightCycle,
+        ChargeEnergyEnvironment, EnergyEnvironmentTrait, ORGANIC_TOXICICITY_LEVEL,
+        OrganicEnergyEnvironment, SunlightCycle,
     },
     genes::{Genome, GenomeID, RelativeDirection},
 };
+
+#[derive(Component, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct CellIsDying;
 
 #[derive(Reflect, VariantArray, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Direction {
@@ -315,6 +319,27 @@ pub fn insert_cell_visual(
     });
 }
 
+pub fn kill_toxic_cells_system(
+    mut commands: Commands,
+    query: Query<(Entity, &GridPosition, &Cell), Without<CellIsDying>>,
+    organic_energy_env: ResMut<OrganicEnergyEnvironment>,
+    charge_energy_env: Res<ChargeEnergyEnvironment>,
+) {
+    for (entity, grid_pos, cell) in query.iter() {
+        let organic_energy = organic_energy_env.peek(grid_pos.x, grid_pos.y).unwrap_or(0);
+        let charge_energy = charge_energy_env.peek(grid_pos.x, grid_pos.y).unwrap_or(0);
+
+        let organic_is_toxic =
+            organic_energy > ORGANIC_TOXICICITY_LEVEL && !matches!(cell, Cell::Root);
+        let charge_is_toxic =
+            charge_energy > ORGANIC_TOXICICITY_LEVEL && !matches!(cell, Cell::Antenna);
+
+        if organic_is_toxic || charge_is_toxic {
+            commands.entity(entity).insert(CellIsDying);
+        }
+    }
+}
+
 pub fn cell_request_energy_system(
     mut commands: Commands,
     cells: Query<(Entity, &GridPosition, &Cell)>,
@@ -328,12 +353,12 @@ pub fn cell_request_energy_system(
             Cell::Root => commands
                 .entity(entity)
                 .insert(CellRequestOrganicEnergy(*grid_pos)),
-            _ => unimplemented!("Energy requests for cell type {:?} not implemented", cell),
+            _ => continue,
         };
     }
 }
 
-pub fn cell_collect_solar_energy(
+pub fn cell_collect_solar_energy_system(
     mut query: Query<&mut CellEnergy, With<CellRequestSolarEnergy>>,
     environment: Res<SunlightCycle>,
     simulation_step: Res<SimulationStep>,
@@ -400,6 +425,10 @@ pub fn invoke_cell_genome_actions_system(
     )>,
 ) {
     for (_grid_pos, _cell, _cell_energy, _genome, _genome_id) in cells.iter_mut() {
+        debug_assert!(
+            matches!(_cell, Cell::Sprout | Cell::Seed(_)),
+            "Only Sprout and Seed cells should have genomes"
+        );
         // TODO: Implement
     }
 }
@@ -445,6 +474,13 @@ pub fn transfer_energy_system(world: &mut World) {
 
         cell_energy.0 += energy;
     }
+}
+
+#[derive(Message, Clone, Debug)]
+pub struct SpawnChildCellMessage {
+    pub parent: Entity,
+    pub child_cell: Cell,
+    pub child_genome: Genome,
 }
 
 #[cfg(test)]

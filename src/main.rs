@@ -18,11 +18,14 @@ use rand::RngExt;
 use crate::{
     cells::{
         Cell, CellEnergy, Direction, FacingDirection, SeedCell, cell_collect_charge_energy_system,
-        cell_collect_organic_energy_system, cell_collect_solar_energy, cell_transform,
-        insert_cell_visual, invoke_cell_genome_actions_system, transfer_energy_system,
+        cell_collect_organic_energy_system, cell_collect_solar_energy_system,
+        cell_request_energy_system, cell_transform, insert_cell_visual,
+        invoke_cell_genome_actions_system, kill_toxic_cells_system, transfer_energy_system,
     },
-    energy::{ChargeEnergyEnvironment, OrganicEnergyEnvironment, SunlightCycle},
-    genes::{Genome, GenomeEntry, GenomeID},
+    energy::{
+        ChargeEnergyEnvironment, OrganicEnergyEnvironment, SunlightCycle, charge_energy_system,
+    },
+    genes::{Genome, GenomeID},
     input::{SimulationInputPlugin, observe_cell_hover, observe_cell_out},
 };
 
@@ -126,13 +129,6 @@ impl Default for SimulationSettings {
 // 4. Perform a step in energy transfer between connected cells.
 
 fn main() {
-    let mut rng = rand::rng();
-    let x: GenomeEntry = rng.random();
-
-    // serialize to json to file
-    let json = serde_json::to_string_pretty(&x).unwrap();
-    std::fs::write("genome_entry.json", json).unwrap();
-
     let simulation_settings = SimulationSettings::default();
 
     let organic_energy_env = OrganicEnergyEnvironment::new(
@@ -183,8 +179,8 @@ fn main() {
             Startup,
             (
                 setup_camera_system,
-                // initialize_sprouts_system,
                 draw_world_grid_system,
+                // initialize_sprouts_system,
                 add_test_cells,
             ),
         )
@@ -195,11 +191,14 @@ fn main() {
                 (
                     invoke_cell_genome_actions_system,
                     transfer_energy_system,
-                    cell_collect_solar_energy,
+                    cell_request_energy_system,
+                    cell_collect_solar_energy_system,
                     cell_collect_organic_energy_system,
                     cell_collect_charge_energy_system,
+                    kill_toxic_cells_system,
                 )
                     .chain(),
+                charge_energy_system,
                 // shuffle_cells_system,
             ),
         )
@@ -345,7 +344,7 @@ pub fn add_test_cells(mut commands: Commands) {
     info!("Spawning test Leaf cell");
     commands.spawn((
         Cell::Leaf,
-        CellEnergy(100),
+        CellEnergy(5),
         FacingDirection(Direction::North),
         GridPosition { x: 10, y: 10 },
         rand::rng().random::<Genome>(),
@@ -355,7 +354,7 @@ pub fn add_test_cells(mut commands: Commands) {
     info!("Spawning test Antenna cell");
     commands.spawn((
         Cell::Antenna,
-        CellEnergy(100),
+        CellEnergy(5),
         FacingDirection(Direction::East),
         GridPosition { x: 11, y: 11 },
         rand::rng().random::<Genome>(),
@@ -365,7 +364,7 @@ pub fn add_test_cells(mut commands: Commands) {
     info!("Spawning test Sprout cell");
     commands.spawn((
         Cell::Sprout,
-        CellEnergy(100),
+        CellEnergy(5),
         FacingDirection(Direction::North),
         GridPosition { x: 12, y: 12 },
         rand::rng().random::<Genome>(),
@@ -375,7 +374,7 @@ pub fn add_test_cells(mut commands: Commands) {
     info!("Spawning test Root cell");
     commands.spawn((
         Cell::Root,
-        CellEnergy(100),
+        CellEnergy(5),
         FacingDirection(Direction::South),
         GridPosition { x: 13, y: 13 },
         rand::rng().random::<Genome>(),
@@ -385,7 +384,7 @@ pub fn add_test_cells(mut commands: Commands) {
     info!("Spawning test Branch cell");
     commands.spawn((
         Cell::Branch,
-        CellEnergy(100),
+        CellEnergy(5),
         FacingDirection(Direction::West),
         GridPosition { x: 14, y: 14 },
         rand::rng().random::<Genome>(),
@@ -395,7 +394,7 @@ pub fn add_test_cells(mut commands: Commands) {
     info!("Spawning test Dormant Seed cell");
     commands.spawn((
         Cell::Seed(SeedCell::DormantSeed),
-        CellEnergy(100),
+        CellEnergy(5),
         FacingDirection(Direction::North),
         GridPosition { x: 15, y: 15 },
         rand::rng().random::<Genome>(),
