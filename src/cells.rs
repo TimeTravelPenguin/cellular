@@ -13,8 +13,7 @@ use strum::VariantArray;
 use crate::{
     CELL_BLUE, CELL_BROWN, CELL_GREEN, CELL_ORANGE, GridPosition, SimulationStep, TILE_SIZE,
     energy::{
-        ChargeEnergyEnvironment, EnergyEnvironmentTrait, OrganicEnergyEnvironment,
-        SunlightCycle,
+        ChargeEnergyEnvironment, EnergyEnvironmentTrait, OrganicEnergyEnvironment, SunlightCycle,
     },
     genes::{Genome, GenomeID, RelativeDirection},
 };
