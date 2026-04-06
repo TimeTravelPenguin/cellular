@@ -1,4 +1,4 @@
-# Genetic Cellular Automata
+# Genetic Cellular Automata (WIP)
 
 The simulation is an implementation of the work by [Simulife Hub]. The
 inspiring project was originally implemented in the [Processing] software,
