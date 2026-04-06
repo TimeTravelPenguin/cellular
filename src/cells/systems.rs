@@ -13,6 +13,23 @@ use crate::{
     input::{observe_cell_hover, observe_cell_out},
 };
 
+pub fn spawn_cell(
+    commands: &mut Commands,
+    cell: Cell,
+    grid_pos: GridPosition,
+    facing: FacingDirection,
+    energy: CellEnergy,
+    genome: Genome,
+    genome_id: GenomeID,
+) {
+    info!(
+        "Spawning cell at ({}, {}) of type {:?}",
+        grid_pos.x, grid_pos.y, cell,
+    );
+
+    commands.spawn((grid_pos, facing, cell, energy, genome, genome_id));
+}
+
 fn facing_rotation(direction: Direction) -> Quat {
     match direction {
         Direction::East => Quat::IDENTITY,

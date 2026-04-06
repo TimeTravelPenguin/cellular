@@ -18,7 +18,7 @@ use rand::RngExt;
 use crate::{
     cells::{
         Cell, CellInfo, Direction, FacingDirection, SeedCell, UpdateCellInfoMessage,
-        draw_cells_system,
+        draw_cells_system, spawn_cell,
     },
     energy::{
         CellEnergy, ChargeEnergyEnvironment, OrganicEnergyEnvironment, SunlightCycle,
@@ -238,16 +238,16 @@ fn initialize_sprouts_system(
 ) {
     let genome: Genome = rng.random();
 
-    let mut positions = HashSet::new();
+    let mut positions = HashSet::with_capacity(settings.initial_sprout_count);
     while positions.len() < settings.initial_sprout_count {
         let x = rng.random_range(0..settings.grid_width);
         let y = rng.random_range(0..settings.grid_height);
         positions.insert((x, y));
     }
 
-    for (x, y) in positions {
-        info!("Spawning initial sprout at ({}, {})", x, y);
-        commands.spawn((
+    let mut bundle_elems = Vec::with_capacity(settings.initial_sprout_count);
+    for &(x, y) in &positions {
+        bundle_elems.push((
             Cell::Sprout,
             CellEnergy(10),
             rng.random::<FacingDirection>(),
@@ -256,6 +256,8 @@ fn initialize_sprouts_system(
             genome.clone(),
         ));
     }
+
+    commands.spawn_batch(bundle_elems);
 }
 
 fn shuffle_cells_system(
@@ -334,63 +336,63 @@ fn draw_world_grid_system(
 }
 
 pub fn add_test_cells(mut commands: Commands) {
-    info!("Spawning test Leaf cell");
-    commands.spawn((
+    spawn_cell(
+        &mut commands,
         Cell::Leaf,
-        CellEnergy(5),
-        FacingDirection(Direction::North),
         GridPosition { x: 10, y: 10 },
+        FacingDirection(Direction::North),
+        CellEnergy(5),
         rand::rng().random::<Genome>(),
         rand::rng().random::<GenomeID>(),
-    ));
+    );
 
-    info!("Spawning test Antenna cell");
-    commands.spawn((
+    spawn_cell(
+        &mut commands,
         Cell::Antenna,
-        CellEnergy(5),
-        FacingDirection(Direction::East),
         GridPosition { x: 11, y: 11 },
+        FacingDirection(Direction::East),
+        CellEnergy(5),
         rand::rng().random::<Genome>(),
         rand::rng().random::<GenomeID>(),
-    ));
+    );
 
-    info!("Spawning test Sprout cell");
-    commands.spawn((
+    spawn_cell(
+        &mut commands,
         Cell::Sprout,
-        CellEnergy(5),
-        FacingDirection(Direction::North),
         GridPosition { x: 12, y: 12 },
-        rand::rng().random::<Genome>(),
-        rand::rng().random::<GenomeID>(),
-    ));
-
-    info!("Spawning test Root cell");
-    commands.spawn((
-        Cell::Root,
-        CellEnergy(5),
-        FacingDirection(Direction::South),
-        GridPosition { x: 13, y: 13 },
-        rand::rng().random::<Genome>(),
-        rand::rng().random::<GenomeID>(),
-    ));
-
-    info!("Spawning test Branch cell");
-    commands.spawn((
-        Cell::Branch,
-        CellEnergy(5),
-        FacingDirection(Direction::West),
-        GridPosition { x: 14, y: 14 },
-        rand::rng().random::<Genome>(),
-        rand::rng().random::<GenomeID>(),
-    ));
-
-    info!("Spawning test Dormant Seed cell");
-    commands.spawn((
-        Cell::Seed(SeedCell::DormantSeed),
-        CellEnergy(5),
         FacingDirection(Direction::North),
-        GridPosition { x: 15, y: 15 },
+        CellEnergy(5),
         rand::rng().random::<Genome>(),
         rand::rng().random::<GenomeID>(),
-    ));
+    );
+
+    spawn_cell(
+        &mut commands,
+        Cell::Root,
+        GridPosition { x: 13, y: 13 },
+        FacingDirection(Direction::South),
+        CellEnergy(5),
+        rand::rng().random::<Genome>(),
+        rand::rng().random::<GenomeID>(),
+    );
+
+    spawn_cell(
+        &mut commands,
+        Cell::Branch,
+        GridPosition { x: 14, y: 14 },
+        FacingDirection(Direction::West),
+        CellEnergy(5),
+        rand::rng().random::<Genome>(),
+        rand::rng().random::<GenomeID>(),
+    );
+
+    spawn_cell(
+        &mut commands,
+        Cell::Seed(SeedCell::DormantSeed),
+        GridPosition { x: 15, y: 15 },
+        FacingDirection(Direction::North),
+        CellEnergy(5),
+        rand::rng().random::<Genome>(),
+        rand::rng().random::<GenomeID>(),
+    );
 }
