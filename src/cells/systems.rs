@@ -6,7 +6,9 @@ use bevy_rand::{global::GlobalRng, prelude::WyRand};
 
 use crate::{
     GridPosition, TILE_SIZE,
-    cells::*,
+    cells::{
+        Cell, CellEnergy, CellRenderBundle, CellVisualSpec, Direction, FacingDirection, Mesh2d,
+    },
     genes::{Genome, GenomeID},
     input::{observe_cell_hover, observe_cell_out},
 };

@@ -1,4 +1,10 @@
-use bevy::{ecs::query::QueryData, prelude::*};
+use bevy::{
+    ecs::query::QueryData,
+    prelude::{
+        Assets, Bundle, Circle, Color, ColorMaterial, Component, Ellipse, Entity, Mesh, Mesh2d,
+        MeshMaterial2d, Message, Rectangle, Reflect, Transform, Vec, Vec3, vec,
+    },
+};
 use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
