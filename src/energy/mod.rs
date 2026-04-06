@@ -206,8 +206,13 @@ impl EnergyEnvironment {
 }
 
 pub trait EnergyEnvironmentTrait {
+    /// Collects all energy from the specified cell, returning the amount collected.
     fn collect(&mut self, x: usize, y: usize) -> Option<u32>;
+
+    /// Collects energy from the specified cell, splitting it evenly among `split` collectors.
     fn collect_split(&mut self, x: usize, y: usize, split: usize) -> Option<u32>;
+
+    /// Peeks at the amount of energy available in the specified cell without modifying it.
     fn peek(&self, x: usize, y: usize) -> Option<u32>;
 }
 

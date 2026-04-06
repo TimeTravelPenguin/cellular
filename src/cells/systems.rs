@@ -13,6 +13,7 @@ use crate::{
     input::{observe_cell_hover, observe_cell_out},
 };
 
+/// Spawns a new cell entity with the specified components.
 pub fn spawn_cell(
     commands: &mut Commands,
     cell: Cell,
@@ -30,6 +31,7 @@ pub fn spawn_cell(
     commands.spawn((grid_pos, facing, cell, energy, genome, genome_id));
 }
 
+/// Computes the rotation needed to orient a cell in the specified facing direction.
 fn facing_rotation(direction: Direction) -> Quat {
     match direction {
         Direction::East => Quat::IDENTITY,
@@ -39,6 +41,7 @@ fn facing_rotation(direction: Direction) -> Quat {
     }
 }
 
+/// Converts a grid position to a world position for rendering.
 #[inline]
 const fn grid_pos_to_world_pos(grid_pos: &GridPosition) -> Vec3 {
     let world_x = grid_pos.x as f32 * TILE_SIZE;
@@ -90,6 +93,7 @@ pub fn insert_cell_visual(
     });
 }
 
+/// System to create visual entities for cells that don't already have them.
 pub fn draw_cells_system(
     mut commands: Commands,
     cells: Query<(Entity, &GridPosition, &FacingDirection, &Cell), Without<Mesh2d>>,
@@ -121,6 +125,7 @@ pub fn draw_cells_system(
     }
 }
 
+/// System to invoke genome actions for cells that have genomes (Sprout and Seed cells).
 pub fn invoke_cell_genome_actions_system(
     _commands: Commands,
     _rng: Single<&mut WyRand, With<GlobalRng>>,

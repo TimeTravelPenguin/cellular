@@ -39,6 +39,9 @@ pub fn kill_toxic_cells_system(
     }
 }
 
+/// Adds energy request components to cells based on their type. Leaf cells
+/// request solar energy, antenna cells request charge energy, and root cells
+/// request organic energy.
 pub fn cell_request_energy_system(
     mut commands: Commands,
     cells: Query<(Entity, &GridPosition, &Cell)>,
@@ -68,13 +71,17 @@ pub fn cell_collect_solar_energy_system(
     }
 }
 
+/// Distributes energy from the environment to the cells at the given grid
+/// position, splitting it evenly among the cells. If the environment doesn't
+/// have enough energy to give each cell at least
+/// 1 unit, no energy is distributed.
 pub fn distribute_energy<'a, T: Resource + EnergyEnvironmentTrait>(
     environment: &mut ResMut<T>,
     energies: &mut [&mut Mut<'a, CellEnergy>],
-    grid_positions: &GridPosition,
+    grid_position: &GridPosition,
 ) {
     let energy_per_cell = environment
-        .collect_split(grid_positions.x, grid_positions.y, energies.len())
+        .collect_split(grid_position.x, grid_position.y, energies.len())
         .unwrap_or(0);
 
     if energy_per_cell == 0 {
@@ -86,6 +93,8 @@ pub fn distribute_energy<'a, T: Resource + EnergyEnvironmentTrait>(
     }
 }
 
+/// Collects energy from the environment for cells that have requested organic
+/// energy, splitting it evenly among the cells at the same grid position.
 pub fn cell_collect_organic_energy_system(
     mut query: Query<(&mut CellEnergy, &GridPosition), With<CellRequestOrganicEnergy>>,
     mut environment: ResMut<OrganicEnergyEnvironment>,
@@ -99,6 +108,8 @@ pub fn cell_collect_organic_energy_system(
     }
 }
 
+/// Collects energy from the environment for cells that have requested charge
+/// energy, splitting it evenly among the cells at the same grid position.
 pub fn cell_collect_charge_energy_system(
     mut query: Query<(&mut CellEnergy, &GridPosition), With<CellRequestChargeEnergy>>,
     mut environment: ResMut<ChargeEnergyEnvironment>,
@@ -112,6 +123,10 @@ pub fn cell_collect_charge_energy_system(
     }
 }
 
+/// Transfers energy from cells with `EnergyTransferer` component to their
+/// specified recipients. The energy is split evenly among the recipients, and
+/// if the transferer doesn't have enough energy to give each recipient at least
+/// 1 unit, no energy is transferred.
 pub fn transfer_energy_system(world: &mut World) {
     let mut transfers: HashMap<Entity, u32> = HashMap::new();
 
