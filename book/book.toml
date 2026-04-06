@@ -2,3 +2,6 @@
 title = "Simulation Documentation"
 authors = ["Phillip Smith"]
 language = "en"
+
+[preprocessor.plantuml]
+plantuml-cmd = "plantuml -darkmode"
