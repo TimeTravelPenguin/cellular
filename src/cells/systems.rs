@@ -7,7 +7,8 @@ use bevy_rand::{global::GlobalRng, prelude::WyRand};
 use crate::{
     GridPosition, TILE_SIZE,
     cells::{
-        Cell, CellEnergy, CellRenderBundle, CellVisualSpec, Direction, FacingDirection, Mesh2d,
+        Cell, CellEnergy, CellRenderBundle, CellVisualSpec, Direction, FacingDirection,
+        GenomeActionable, Mesh2d,
     },
     genes::{Genome, GenomeID},
     input::{observe_cell_hover, observe_cell_out},
@@ -28,7 +29,11 @@ pub fn spawn_cell(
         grid_pos.x, grid_pos.y, cell,
     );
 
-    commands.spawn((grid_pos, facing, cell, energy, genome, genome_id));
+    let mut entity_commands = commands.spawn((grid_pos, facing, cell, energy, genome, genome_id));
+
+    if matches!(cell, Cell::Sprout | Cell::Seed(_)) {
+        entity_commands.insert(GenomeActionable);
+    }
 }
 
 /// Computes the rotation needed to orient a cell in the specified facing direction.
@@ -129,7 +134,7 @@ pub fn draw_cells_system(
 pub fn invoke_cell_genome_actions_system(
     _commands: Commands,
     _rng: Single<&mut WyRand, With<GlobalRng>>,
-    mut cells: Query<(&GridPosition, &Cell, &Genome, &mut GenomeID)>,
+    mut cells: Query<(&GridPosition, &Cell, &Genome, &mut GenomeID), With<GenomeActionable>>,
 ) {
     for (_grid_pos, _cell, _genome, _genome_id) in cells.iter_mut() {
         debug_assert!(

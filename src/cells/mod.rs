@@ -25,6 +25,9 @@ mod systems;
 pub use self::systems::*;
 
 #[derive(Component, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct GenomeActionable;
+
+#[derive(Component, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct CellIsDying;
 
 #[derive(Reflect, VariantArray, Clone, Copy, Debug, Serialize, Deserialize)]
