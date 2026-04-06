@@ -17,13 +17,14 @@ use rand::RngExt;
 
 use crate::{
     cells::{
-        Cell, CellEnergy, CellInfo, Direction, FacingDirection, SeedCell, UpdateCellInfoMessage,
-        cell_collect_charge_energy_system, cell_collect_organic_energy_system,
-        cell_collect_solar_energy_system, cell_request_energy_system, draw_cells_system,
-        invoke_cell_genome_actions_system, kill_toxic_cells_system, transfer_energy_system,
+        Cell, CellInfo, Direction, FacingDirection, SeedCell, UpdateCellInfoMessage,
+        draw_cells_system,
     },
     energy::{
-        ChargeEnergyEnvironment, OrganicEnergyEnvironment, SunlightCycle, charge_energy_system,
+        CellEnergy, ChargeEnergyEnvironment, OrganicEnergyEnvironment, SunlightCycle,
+        cell_collect_charge_energy_system, cell_collect_organic_energy_system,
+        cell_collect_solar_energy_system, cell_request_energy_system, charge_energy_system,
+        kill_toxic_cells_system, transfer_energy_system,
     },
     genes::{Genome, GenomeID},
     input::SimulationInputPlugin,

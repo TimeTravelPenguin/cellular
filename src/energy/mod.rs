@@ -1,11 +1,14 @@
 use bevy::{
-    ecs::resource::Resource,
+    ecs::{component::Component, entity::Entity, resource::Resource},
     prelude::{Deref, DerefMut},
     reflect::Reflect,
 };
 use log::info;
+use serde::{Deserialize, Serialize};
 
 mod systems;
+
+use crate::GridPosition;
 
 pub use self::systems::*;
 
@@ -17,6 +20,9 @@ pub const CHARGE_LIMIT: u32 = 100;
 pub fn index(width: usize, x: usize, y: usize) -> usize {
     y * width + x
 }
+
+#[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CellEnergy(pub u32);
 
 #[derive(Reflect, Clone, Copy, Debug)]
 pub enum Energy {
@@ -244,5 +250,31 @@ impl EnergyEnvironmentTrait for ChargeEnergyEnvironment {
 
     fn peek(&self, x: usize, y: usize) -> Option<u32> {
         self.0.peek(x, y)
+    }
+}
+
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+pub struct CellRequestSolarEnergy;
+
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+pub struct CellRequestOrganicEnergy(GridPosition);
+
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+pub struct CellRequestChargeEnergy(GridPosition);
+
+#[derive(Component, Reflect, Clone, Copy, Debug, Default, Serialize, Deserialize)]
+pub struct EnergyTransferer {
+    pub north: Option<Entity>,
+    pub east: Option<Entity>,
+    pub south: Option<Entity>,
+    pub west: Option<Entity>,
+}
+
+impl EnergyTransferer {
+    pub fn transfer_recipients(&self) -> Vec<Entity> {
+        [self.north, self.east, self.south, self.west]
+            .iter()
+            .filter_map(|&opt| opt)
+            .collect()
     }
 }

@@ -10,6 +10,7 @@ use strum::VariantArray;
 
 use crate::{
     CELL_BLUE, CELL_BROWN, CELL_GREEN, CELL_ORANGE, GridPosition, TILE_SIZE,
+    energy::CellEnergy,
     genes::{Genome, GenomeID, RelativeDirection},
 };
 
@@ -79,32 +80,6 @@ impl FacingDirection {
     }
 }
 
-#[derive(Component, Reflect, Clone, Copy, Debug)]
-pub struct CellRequestSolarEnergy;
-
-#[derive(Component, Reflect, Clone, Copy, Debug)]
-pub struct CellRequestOrganicEnergy(GridPosition);
-
-#[derive(Component, Reflect, Clone, Copy, Debug)]
-pub struct CellRequestChargeEnergy(GridPosition);
-
-#[derive(Component, Reflect, Clone, Copy, Debug, Default, Serialize, Deserialize)]
-pub struct EnergyTransferer {
-    pub north: Option<Entity>,
-    pub east: Option<Entity>,
-    pub south: Option<Entity>,
-    pub west: Option<Entity>,
-}
-
-impl EnergyTransferer {
-    pub fn transfer_recipients(&self) -> Vec<Entity> {
-        [self.north, self.east, self.south, self.west]
-            .iter()
-            .filter_map(|&opt| opt)
-            .collect()
-    }
-}
-
 #[derive(Reflect, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SeedCell {
     DormantSeed,
@@ -126,9 +101,6 @@ impl SeedCell {
         )
     }
 }
-
-#[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CellEnergy(pub u32);
 
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Cell {
@@ -262,6 +234,12 @@ pub struct SpawnChildCellMessage {
     pub parent: Entity,
     pub child_cell: Cell,
     pub child_genome: Genome,
+}
+
+#[derive(Component, Reflect, Clone, Debug)]
+pub struct CellRelation {
+    pub parent: Option<Entity>,
+    pub children: Vec<Entity>,
 }
 
 #[derive(Message)]
