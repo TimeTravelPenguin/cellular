@@ -1,14 +1,13 @@
 use bevy::{
-    app::{App, MainScheduleOrder, Plugin, Update},
-    ecs::{
-        resource::Resource,
-        schedule::{Schedule, ScheduleLabel},
-        system::ResMut,
-    },
+    ecs::resource::Resource,
     prelude::{Deref, DerefMut},
     reflect::Reflect,
 };
 use log::info;
+
+mod systems;
+
+pub use self::systems::*;
 
 pub const ORGANIC_TOXICICITY_LEVEL: u32 = 100;
 pub const CHARGE_TOXICITY_LEVEL: u32 = 90;
@@ -246,8 +245,4 @@ impl EnergyEnvironmentTrait for ChargeEnergyEnvironment {
     fn peek(&self, x: usize, y: usize) -> Option<u32> {
         self.0.peek(x, y)
     }
-}
-
-pub fn charge_energy_system(mut charge_env: ResMut<ChargeEnergyEnvironment>) {
-    charge_env.charge();
 }
