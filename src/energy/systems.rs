@@ -8,9 +8,9 @@ use crate::{
     SimulationStep,
     cells::{Cell, CellIsDying},
     energy::{
-        CellEnergy, CellRequestChargeEnergy, CellRequestOrganicEnergy, CellRequestSolarEnergy,
-        ChargeEnergyEnvironment, EnergyEnvironmentTrait, EnergyTransferer, GridPosition,
-        ORGANIC_TOXICICITY_LEVEL, OrganicEnergyEnvironment, SunlightCycle,
+        CHARGE_TOXICITY_LEVEL, CellEnergy, CellRequestChargeEnergy, CellRequestOrganicEnergy,
+        CellRequestSolarEnergy, ChargeEnergyEnvironment, EnergyEnvironmentTrait, EnergyTransferer,
+        GridPosition, ORGANIC_TOXICICITY_LEVEL, OrganicEnergyEnvironment, SunlightCycle,
     },
 };
 
@@ -31,7 +31,7 @@ pub fn kill_toxic_cells_system(
         let organic_is_toxic =
             organic_energy > ORGANIC_TOXICICITY_LEVEL && !matches!(cell, Cell::Root);
         let charge_is_toxic =
-            charge_energy > ORGANIC_TOXICICITY_LEVEL && !matches!(cell, Cell::Antenna);
+            charge_energy > CHARGE_TOXICITY_LEVEL && !matches!(cell, Cell::Antenna);
 
         if organic_is_toxic || charge_is_toxic {
             commands.entity(entity).insert(CellIsDying);
