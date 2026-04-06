@@ -1,4 +1,10 @@
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{
+    platform::collections::HashMap,
+    prelude::{
+        Assets, ColorMaterial, Commands, Entity, EntityCommands, Mesh, MeshMaterial2d, Mut, Quat,
+        Query, Res, ResMut, Resource, Single, Transform, Vec3, With, Without, World, default, info,
+    },
+};
 use bevy_rand::{global::GlobalRng, prelude::WyRand};
 use itertools::Itertools;
 
@@ -10,6 +16,7 @@ use crate::{
         OrganicEnergyEnvironment, SunlightCycle,
     },
     genes::{Genome, GenomeID},
+    input::{observe_cell_hover, observe_cell_out},
 };
 
 fn facing_rotation(direction: Direction) -> Quat {
@@ -70,6 +77,37 @@ pub fn insert_cell_visual(
             });
         }
     });
+}
+
+pub fn draw_cells_system(
+    mut commands: Commands,
+    cells: Query<(Entity, &GridPosition, &FacingDirection, &Cell), Without<Mesh2d>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    for (entity, grid_pos, facing_direction, cell) in &cells {
+        let transform = cell_transform(grid_pos, facing_direction.0);
+        let spec = cell.visual_spec();
+
+        info!(
+            "Spawning cell at ({}, {}) of type {:?}",
+            grid_pos.x, grid_pos.y, cell,
+        );
+
+        let mut entity_commands = commands.entity(entity);
+        insert_cell_visual(
+            &mut entity_commands,
+            spec,
+            transform,
+            *grid_pos,
+            &mut meshes,
+            &mut materials,
+        );
+
+        entity_commands
+            .observe(observe_cell_hover)
+            .observe(observe_cell_out);
+    }
 }
 
 pub fn kill_toxic_cells_system(
@@ -227,13 +265,6 @@ pub fn transfer_energy_system(world: &mut World) {
 
         cell_energy.0 += energy;
     }
-}
-
-#[derive(Message, Clone, Debug)]
-pub struct SpawnChildCellMessage {
-    pub parent: Entity,
-    pub child_cell: Cell,
-    pub child_genome: Genome,
 }
 
 #[cfg(test)]

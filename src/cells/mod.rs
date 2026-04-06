@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{ecs::query::QueryData, prelude::*};
 use rand::{
     RngExt,
     distr::{Distribution, StandardUniform},
@@ -10,7 +10,7 @@ use strum::VariantArray;
 
 use crate::{
     CELL_BLUE, CELL_BROWN, CELL_GREEN, CELL_ORANGE, GridPosition, TILE_SIZE,
-    genes::RelativeDirection,
+    genes::{Genome, GenomeID, RelativeDirection},
 };
 
 mod systems;
@@ -255,4 +255,25 @@ pub struct CellVisualSpec {
     shape: ShapeSpec,
     color: Color,
     children: Vec<ChildVisualSpec>,
+}
+
+#[derive(Message, Clone, Debug)]
+pub struct SpawnChildCellMessage {
+    pub parent: Entity,
+    pub child_cell: Cell,
+    pub child_genome: Genome,
+}
+
+#[derive(Message)]
+pub struct UpdateCellInfoMessage {
+    pub cell: Option<Entity>,
+}
+
+#[derive(QueryData)]
+pub struct CellInfo {
+    pub position: &'static GridPosition,
+    pub cell_type: &'static Cell,
+    pub energy: &'static CellEnergy,
+    pub facing: &'static FacingDirection,
+    pub genome_id: &'static GenomeID,
 }

@@ -17,16 +17,16 @@ use rand::RngExt;
 
 use crate::{
     cells::{
-        Cell, CellEnergy, Direction, FacingDirection, SeedCell, cell_collect_charge_energy_system,
-        cell_collect_organic_energy_system, cell_collect_solar_energy_system,
-        cell_request_energy_system, cell_transform, insert_cell_visual,
+        Cell, CellEnergy, CellInfo, Direction, FacingDirection, SeedCell, UpdateCellInfoMessage,
+        cell_collect_charge_energy_system, cell_collect_organic_energy_system,
+        cell_collect_solar_energy_system, cell_request_energy_system, draw_cells_system,
         invoke_cell_genome_actions_system, kill_toxic_cells_system, transfer_energy_system,
     },
     energy::{
         ChargeEnergyEnvironment, OrganicEnergyEnvironment, SunlightCycle, charge_energy_system,
     },
     genes::{Genome, GenomeID},
-    input::{SimulationInputPlugin, observe_cell_hover, observe_cell_out},
+    input::SimulationInputPlugin,
 };
 
 mod cells;
@@ -63,25 +63,6 @@ pub enum SimulationView {
     Grid,
     OrganicEnergy,
     ChargeEnergy,
-}
-
-#[derive(Message)]
-pub struct UpdateCellInfoMessage {
-    pub cell: Option<CellInfo>,
-}
-
-#[derive(Component, Reflect, Clone, Debug)]
-pub struct CellInfo {
-    position: GridPosition,
-    cell_type: Cell,
-    energy: CellEnergy,
-    facing: FacingDirection,
-    genome_id: GenomeID,
-}
-
-#[derive(Resource, Reflect, Default, Clone, Debug)]
-pub struct LastHoveredCell {
-    pub cell_info: Option<CellInfo>,
 }
 
 #[derive(Resource, Reflect, Clone, Debug)]
@@ -172,7 +153,6 @@ fn main() {
         .insert_resource(charge_energy_env)
         .init_resource::<SunlightCycle>()
         .init_resource::<SimulationStep>()
-        .init_resource::<LastHoveredCell>()
         .add_message::<UpdateCellInfoMessage>()
         .add_systems(EguiPrimaryContextPass, cell_info_ui_system)
         .add_systems(
@@ -184,12 +164,12 @@ fn main() {
                 add_test_cells,
             ),
         )
-        .add_systems(Update, (draw_cells_system,))
+        .add_systems(Update, draw_cells_system)
         .add_systems(
             Update,
             (
                 (
-                    invoke_cell_genome_actions_system,
+                    // invoke_cell_genome_actions_system,
                     transfer_energy_system,
                     cell_request_energy_system,
                     cell_collect_solar_energy_system,
@@ -220,18 +200,30 @@ fn setup_camera_system(mut commands: Commands, simulation_settings: Res<Simulati
 
 fn cell_info_ui_system(
     mut contexts: EguiContexts,
-    last_hovered_cell: Res<LastHoveredCell>,
+    cells: Query<CellInfo>,
+    mut reader: MessageReader<UpdateCellInfoMessage>,
+    mut last_hovered_cell: Local<Option<Entity>>,
 ) -> Result {
-    if let Some(cell) = last_hovered_cell.cell_info.as_ref() {
+    for msg in reader.read() {
+        if let Some(cell_entity) = msg.cell {
+            *last_hovered_cell = Some(cell_entity);
+        } else {
+            *last_hovered_cell = None;
+        }
+    }
+
+    if let Some(entity) = last_hovered_cell.as_ref()
+        && let Ok(cell_info) = cells.get(*entity)
+    {
         egui::Window::new("Cell Info").show(contexts.ctx_mut()?, |ui| {
             ui.label(format!(
                 "Position: ({}, {})",
-                cell.position.x, cell.position.y
+                cell_info.position.x, cell_info.position.y
             ));
-            ui.label(format!("Type: {:?}", cell.cell_type));
-            ui.label(format!("Energy: {}", cell.energy.0));
-            ui.label(format!("Facing: {:?}", cell.facing.0));
-            ui.label(format!("Genome ID: {}", cell.genome_id.0));
+            ui.label(format!("Type: {:?}", cell_info.cell_type));
+            ui.label(format!("Energy: {:?}", cell_info.energy.0));
+            ui.label(format!("Facing: {:?}", cell_info.facing));
+            ui.label(format!("Genome ID: {:?}", cell_info.genome_id));
         });
     }
 
@@ -400,35 +392,4 @@ pub fn add_test_cells(mut commands: Commands) {
         rand::rng().random::<Genome>(),
         rand::rng().random::<GenomeID>(),
     ));
-}
-
-pub fn draw_cells_system(
-    mut commands: Commands,
-    cells: Query<(Entity, &GridPosition, &FacingDirection, &Cell), Without<Mesh2d>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    for (entity, grid_pos, facing_direction, cell) in &cells {
-        let transform = cell_transform(grid_pos, facing_direction.0);
-        let spec = cell.visual_spec();
-
-        info!(
-            "Spawning cell at ({}, {}) of type {:?}",
-            grid_pos.x, grid_pos.y, cell,
-        );
-
-        let mut entity_commands = commands.entity(entity);
-        insert_cell_visual(
-            &mut entity_commands,
-            spec,
-            transform,
-            *grid_pos,
-            &mut meshes,
-            &mut materials,
-        );
-
-        entity_commands
-            .observe(observe_cell_hover)
-            .observe(observe_cell_out);
-    }
 }

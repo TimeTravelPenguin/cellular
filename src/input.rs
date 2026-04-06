@@ -5,10 +5,7 @@ use bevy::{
 };
 
 use crate::{
-    CellInfo, Grid, GridPosition, LastHoveredCell, SimulationSettings, SimulationView,
-    ToggleGridVisible, UpdateCellInfoMessage,
-    cells::{Cell, CellEnergy, FacingDirection},
-    genes::GenomeID,
+    Grid, SimulationSettings, SimulationView, ToggleGridVisible, UpdateCellInfoMessage, cells::Cell,
 };
 
 pub struct SimulationInputPlugin;
@@ -17,10 +14,7 @@ impl Plugin for SimulationInputPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PreUpdate,
-            (
-                toggle_grid_visibility_system.run_if(resource_exists::<ToggleGridVisible>),
-                update_last_hovered_cell_system,
-            ),
+            (toggle_grid_visibility_system.run_if(resource_exists::<ToggleGridVisible>),),
         )
         .add_systems(Update, (move_camera_system, process_keyboard_system));
     }
@@ -147,39 +141,12 @@ fn toggle_grid_visibility_system(
     commands.remove_resource::<ToggleGridVisible>();
 }
 
-fn update_last_hovered_cell_system(
-    mut cell_info_events: MessageReader<UpdateCellInfoMessage>,
-    mut last_hovered_cell: ResMut<LastHoveredCell>,
-) {
-    for UpdateCellInfoMessage { cell } in cell_info_events.read() {
-        last_hovered_cell.cell_info = cell.clone();
-    }
-}
-
 pub fn observe_cell_hover(
     event: On<Pointer<Over>>,
     mut writer: MessageWriter<UpdateCellInfoMessage>,
-    query: Query<(
-        &GridPosition,
-        &Cell,
-        &CellEnergy,
-        &FacingDirection,
-        &GenomeID,
-    )>,
 ) {
-    let Ok((position, cell_type, energy, facing, genome_id)) = query.get(event.entity) else {
-        warn!("Received pointer over event for non-cell entity");
-        return;
-    };
-
     writer.write(UpdateCellInfoMessage {
-        cell: Some(CellInfo {
-            position: *position,
-            cell_type: *cell_type,
-            energy: *energy,
-            facing: *facing,
-            genome_id: *genome_id,
-        }),
+        cell: Some(event.entity),
     });
 }
 
