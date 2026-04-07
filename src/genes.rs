@@ -8,7 +8,7 @@ use serde_with::serde_as;
 use strum::{EnumCount, VariantArray};
 use thiserror::Error;
 
-use crate::cells::{Cell, SeedCell};
+use crate::cells::Cell;
 use crate::energy::NeighbouringEnergy;
 
 pub const GENOME_SIZE: usize = 52;
@@ -73,13 +73,7 @@ fn random_spawnable_cell_type<R: Rng + ?Sized>(rng: &mut R) -> Cell {
         1 => Cell::Root,
         2 => Cell::Sprout,
         3 => Cell::Antenna,
-        _ => Cell::Seed(if rng.random_bool(0.5) {
-            SeedCell::DormantSeed
-        } else {
-            SeedCell::DetachedSeed {
-                is_stationary: rng.random(),
-            }
-        }),
+        _ => Cell::Seed,
     }
 }
 

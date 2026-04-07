@@ -18,20 +18,15 @@ use rand::RngExt;
 
 use crate::{
     cells::{
-        Cell, CellInfo, Direction, FacingDirection, SeedCell, UpdateCellInfoMessage,
-        draw_cells_system, invoke_cell_genome_actions_system, spawn_cell,
-    },
-    energy::{
-        CellEnergy, ChargeEnergyEnvironment, OrganicEnergyEnvironment, SunlightCycle,
-        cell_collect_charge_energy_system, cell_collect_organic_energy_system,
-        cell_collect_solar_energy_system, cell_request_energy_system, charge_energy_system,
-        init_energy_view_system, kill_toxic_cells_system, transfer_energy_system,
-        update_energy_view_system,
+        Cell, CellInfo, CellPlugin, Direction, FacingDirection, NewCellEvent, SproutCell,
+        UpdateCellInfoMessage,
     },
     cli::{Cli, Command},
     config::SimulationConfig,
+    energy::{CellEnergy, ChargeEnergyEnvironment, OrganicEnergyEnvironment},
     genes::{Genome, GenomeID},
     input::SimulationInputPlugin,
+    simulation::SimulationGrid,
 };
 
 mod cells;
@@ -145,6 +140,11 @@ fn run_simulation(config: SimulationConfig) {
         simulation_settings.grid_height,
         config.environment.initial_charge_energy,
     );
+
+    let simulation_grid = SimulationGrid::new(
+        simulation_settings.grid_width,
+        simulation_settings.grid_height,
+        simulation::GridBoundary::Fixed,
     );
 
     App::new()
@@ -156,6 +156,7 @@ fn run_simulation(config: SimulationConfig) {
             PhysicsPlugins::default(),
             EguiPlugin::default(),
             SimulationInputPlugin,
+            CellPlugin,
         ))
         .insert_resource(DebugPickingMode::Normal)
         .add_systems(
@@ -174,7 +175,7 @@ fn run_simulation(config: SimulationConfig) {
         .insert_resource(simulation_settings)
         .insert_resource(organic_energy_env)
         .insert_resource(charge_energy_env)
-        .init_resource::<SunlightCycle>()
+        .insert_resource(simulation_grid)
         .init_resource::<SimulationStep>()
         .add_message::<UpdateCellInfoMessage>()
         .add_systems(EguiPrimaryContextPass, cell_info_ui_system)
@@ -183,30 +184,11 @@ fn run_simulation(config: SimulationConfig) {
             (
                 setup_camera_system,
                 draw_world_grid_system,
-                init_energy_view_system,
-                // initialize_sprouts_system,
-                add_test_cells,
+                initialize_sprouts_system,
+                // add_test_cells,
             ),
         )
-        .add_systems(
-            Update,
-            (
-                (
-                    invoke_cell_genome_actions_system,
-                    transfer_energy_system,
-                    cell_request_energy_system,
-                    cell_collect_solar_energy_system,
-                    cell_collect_organic_energy_system,
-                    cell_collect_charge_energy_system,
-                    kill_toxic_cells_system,
-                )
-                    .chain(),
-                charge_energy_system,
-                draw_cells_system,
-                // update_energy_view_system,
-                // shuffle_cells_system,
-            ),
-        )
+        .add_systems(Update, (shuffle_cells_system,))
         .add_systems(PostUpdate, |mut step: ResMut<SimulationStep>| {
             step.0 += 1;
         })
@@ -269,19 +251,24 @@ fn initialize_sprouts_system(
         positions.insert((x, y));
     }
 
-    let mut bundle_elems = Vec::with_capacity(settings.initial_sprout_count);
     for &(x, y) in &positions {
-        bundle_elems.push((
-            Cell::Sprout,
-            CellEnergy(10),
-            rng.random::<FacingDirection>(),
-            GridPosition { x, y },
-            rng.random::<GenomeID>(),
-            genome.clone(),
-        ));
+        let facing_direction = rng.random::<FacingDirection>();
+        commands
+            .spawn((
+                SproutCell,
+                CellEnergy(10),
+                facing_direction,
+                GridPosition { x, y },
+                rng.random::<GenomeID>(),
+                genome.clone(),
+            ))
+            .trigger(|entity| NewCellEvent {
+                entity,
+                grid_pos: GridPosition { x, y },
+                cell: Cell::Sprout,
+                facing_direction,
+            });
     }
-
-    commands.spawn_batch(bundle_elems);
 }
 
 fn shuffle_cells_system(
@@ -359,64 +346,64 @@ fn draw_world_grid_system(
     }
 }
 
-pub fn add_test_cells(mut commands: Commands) {
-    spawn_cell(
-        &mut commands,
-        Cell::Leaf,
-        GridPosition { x: 10, y: 10 },
-        FacingDirection(Direction::North),
-        CellEnergy(5),
-        rand::rng().random::<Genome>(),
-        rand::rng().random::<GenomeID>(),
-    );
-
-    spawn_cell(
-        &mut commands,
-        Cell::Antenna,
-        GridPosition { x: 11, y: 11 },
-        FacingDirection(Direction::East),
-        CellEnergy(5),
-        rand::rng().random::<Genome>(),
-        rand::rng().random::<GenomeID>(),
-    );
-
-    spawn_cell(
-        &mut commands,
-        Cell::Sprout,
-        GridPosition { x: 12, y: 12 },
-        FacingDirection(Direction::North),
-        CellEnergy(5),
-        rand::rng().random::<Genome>(),
-        rand::rng().random::<GenomeID>(),
-    );
-
-    spawn_cell(
-        &mut commands,
-        Cell::Root,
-        GridPosition { x: 13, y: 13 },
-        FacingDirection(Direction::South),
-        CellEnergy(5),
-        rand::rng().random::<Genome>(),
-        rand::rng().random::<GenomeID>(),
-    );
-
-    spawn_cell(
-        &mut commands,
-        Cell::Branch,
-        GridPosition { x: 14, y: 14 },
-        FacingDirection(Direction::West),
-        CellEnergy(5),
-        rand::rng().random::<Genome>(),
-        rand::rng().random::<GenomeID>(),
-    );
-
-    spawn_cell(
-        &mut commands,
-        Cell::Seed(SeedCell::DormantSeed),
-        GridPosition { x: 15, y: 15 },
-        FacingDirection(Direction::North),
-        CellEnergy(5),
-        rand::rng().random::<Genome>(),
-        rand::rng().random::<GenomeID>(),
-    );
-}
+// pub fn add_test_cells(mut commands: Commands) {
+//     spawn_cell(
+//         &mut commands,
+//         Cell::Leaf,
+//         GridPosition { x: 10, y: 10 },
+//         FacingDirection(Direction::North),
+//         CellEnergy(5),
+//         rand::rng().random::<Genome>(),
+//         rand::rng().random::<GenomeID>(),
+//     );
+//
+//     spawn_cell(
+//         &mut commands,
+//         Cell::Antenna,
+//         GridPosition { x: 11, y: 11 },
+//         FacingDirection(Direction::East),
+//         CellEnergy(5),
+//         rand::rng().random::<Genome>(),
+//         rand::rng().random::<GenomeID>(),
+//     );
+//
+//     spawn_cell(
+//         &mut commands,
+//         Cell::Sprout,
+//         GridPosition { x: 12, y: 12 },
+//         FacingDirection(Direction::North),
+//         CellEnergy(5),
+//         rand::rng().random::<Genome>(),
+//         rand::rng().random::<GenomeID>(),
+//     );
+//
+//     spawn_cell(
+//         &mut commands,
+//         Cell::Root,
+//         GridPosition { x: 13, y: 13 },
+//         FacingDirection(Direction::South),
+//         CellEnergy(5),
+//         rand::rng().random::<Genome>(),
+//         rand::rng().random::<GenomeID>(),
+//     );
+//
+//     spawn_cell(
+//         &mut commands,
+//         Cell::Branch,
+//         GridPosition { x: 14, y: 14 },
+//         FacingDirection(Direction::West),
+//         CellEnergy(5),
+//         rand::rng().random::<Genome>(),
+//         rand::rng().random::<GenomeID>(),
+//     );
+//
+//     spawn_cell(
+//         &mut commands,
+//         Cell::Seed(Seed::DormantSeed),
+//         GridPosition { x: 15, y: 15 },
+//         FacingDirection(Direction::North),
+//         CellEnergy(5),
+//         rand::rng().random::<Genome>(),
+//         rand::rng().random::<GenomeID>(),
+//     );
+// }

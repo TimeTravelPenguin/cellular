@@ -1,8 +1,8 @@
 use bevy::{
-    ecs::query::QueryData,
+    ecs::{event::EntityEvent, query::QueryData},
     prelude::{
-        Assets, Bundle, Circle, Color, ColorMaterial, Component, Ellipse, Entity, Mesh, Mesh2d,
-        MeshMaterial2d, Message, Rectangle, Reflect, Transform, Vec, Vec3, vec,
+        Assets, Bundle, Circle, Color, ColorMaterial, Component, Deref, DerefMut, Ellipse, Entity,
+        Mesh, Mesh2d, MeshMaterial2d, Message, Rectangle, Reflect, Transform, Vec, Vec3, vec,
     },
 };
 use rand::{
@@ -24,11 +24,40 @@ mod systems;
 
 pub use self::systems::*;
 
-#[derive(Component, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct GenomeActionable;
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+#[require(Cell::Sprout)]
+pub struct SproutCell;
+
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+#[require(Cell::Leaf)]
+pub struct LeafCell;
+
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+#[require(Cell::Antenna)]
+pub struct AntennaCell;
+
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+#[require(Cell::Root)]
+pub struct RootCell;
+
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+#[require(Cell::Branch)]
+pub struct BranchCell;
+
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+#[require(Cell::Seed)]
+pub struct SeedCell;
+
+#[derive(EntityEvent, Debug, Clone)]
+pub struct NewCellEvent {
+    pub entity: Entity,
+    pub grid_pos: GridPosition,
+    pub cell: Cell,
+    pub facing_direction: FacingDirection,
+}
 
 #[derive(Component, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct CellIsDying;
+pub struct RequestDeath;
 
 #[derive(Reflect, VariantArray, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Direction {
@@ -55,7 +84,7 @@ impl Distribution<Direction> for StandardUniform {
     }
 }
 
-#[derive(Component, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Component, Reflect, Clone, Copy, Debug, Deref, DerefMut, Serialize, Deserialize)]
 pub struct FacingDirection(pub Direction);
 
 impl Distribution<FacingDirection> for StandardUniform {
@@ -101,28 +130,6 @@ impl FacingDirection {
     }
 }
 
-#[derive(Reflect, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SeedCell {
-    DormantSeed,
-    DetachedSeed { is_stationary: bool },
-}
-
-impl SeedCell {
-    pub const fn is_detached(&self) -> bool {
-        matches!(self, SeedCell::DetachedSeed { .. })
-    }
-
-    pub const fn is_stationary(&self) -> bool {
-        matches!(
-            self,
-            SeedCell::DormantSeed
-                | SeedCell::DetachedSeed {
-                    is_stationary: true
-                }
-        )
-    }
-}
-
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Cell {
     Leaf,
@@ -130,12 +137,12 @@ pub enum Cell {
     Root,
     Sprout,
     Branch,
-    Seed(SeedCell),
+    Seed,
 }
 
 impl Cell {
     pub fn is_consumable(&self) -> bool {
-        matches!(self, Cell::Seed(_) | Cell::Leaf | Cell::Sprout)
+        matches!(self, Cell::Seed | Cell::Leaf | Cell::Sprout)
     }
 
     /// Returns the visual specification for this cell type, including its
@@ -195,7 +202,7 @@ impl Cell {
                 color: CELL_BROWN,
                 children: vec![],
             },
-            Cell::Seed(_) => CellVisualSpec {
+            Cell::Seed => CellVisualSpec {
                 shape: ShapeSpec::Circle(TILE_SIZE / 6.0),
                 color: Color::WHITE,
                 children: vec![],

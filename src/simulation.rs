@@ -73,7 +73,7 @@ pub struct SimulationGrid {
     width: usize,
     height: usize,
     boundary: GridBoundary,
-    cells: HashMap<(usize, usize), Cell>,
+    cells: HashMap<(usize, usize), Entity>,
 }
 
 impl SimulationGrid {
@@ -82,11 +82,19 @@ impl SimulationGrid {
             width,
             height,
             boundary,
-            cells: HashMap::default(),
+            cells: HashMap::with_capacity(width * height),
         }
     }
 
-    pub fn get_cell(&self, x: usize, y: usize) -> Option<&Cell> {
-        self.cells.get(&(x, y))
+    pub fn get(&self, x: usize, y: usize) -> Option<Entity> {
+        self.cells.get(&(x, y)).copied()
+    }
+
+    pub fn set(&mut self, x: usize, y: usize, entity: Entity) {
+        self.cells.insert((x, y), entity);
+    }
+
+    pub fn remove(&mut self, x: usize, y: usize) {
+        self.cells.remove(&(x, y));
     }
 }

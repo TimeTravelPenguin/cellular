@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use bevy::{
-    ecs::system::Res,
+    app::{App, Plugin, Update},
+    ecs::{message::MessageReader, observer::On, system::Res},
     prelude::{
         Assets, ColorMaterial, Commands, Entity, EntityCommands, Mesh, MeshMaterial2d, Quat, Query,
         ResMut, Single, Transform, Vec3, With, Without, default, info,
@@ -13,8 +14,8 @@ use rand::RngExt;
 use crate::{
     GridPosition, TILE_SIZE,
     cells::{
-        Cell, CellEnergy, CellRenderBundle, CellVisualSpec, Direction, FacingDirection,
-        GenomeActionable, Mesh2d, SeedCell,
+        Cell, CellEnergy, CellRenderBundle, CellVisualSpec, Direction, FacingDirection, Mesh2d,
+        NewCellEvent,
     },
     energy::{ChargeEnergyEnvironment, NeighbouringEnergy, OrganicEnergyEnvironment},
     genes::{
@@ -24,25 +25,12 @@ use crate::{
     utils::grid_pos_to_world_pos,
 };
 
-/// Spawns a new cell entity with the specified components.
-pub fn spawn_cell(
-    commands: &mut Commands,
-    cell: Cell,
-    grid_pos: GridPosition,
-    facing: FacingDirection,
-    energy: CellEnergy,
-    genome: Genome,
-    genome_id: GenomeID,
-) {
-    info!(
-        "Spawning cell at ({}, {}) of type {:?}",
-        grid_pos.x, grid_pos.y, cell,
-    );
+#[derive(Debug, Clone, Copy)]
+pub struct CellPlugin;
 
-    let mut entity_commands = commands.spawn((grid_pos, facing, cell, energy, genome, genome_id));
-
-    if matches!(cell, Cell::Sprout | Cell::Seed(_)) {
-        entity_commands.insert(GenomeActionable);
+impl Plugin for CellPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_observer(draw_new_cells_system);
     }
 }
 
@@ -100,119 +88,31 @@ pub fn insert_cell_visual(
 }
 
 /// System to create visual entities for cells that don't already have them.
-pub fn draw_cells_system(
+fn draw_new_cells_system(
+    event: On<NewCellEvent>,
     mut commands: Commands,
-    cells: Query<(Entity, &GridPosition, &FacingDirection, &Cell), Without<Mesh2d>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    for (entity, grid_pos, facing_direction, cell) in &cells {
-        let transform = cell_transform(grid_pos, facing_direction.0);
-        let spec = cell.visual_spec();
+    let transform = cell_transform(&event.grid_pos, *event.facing_direction);
+    let spec = event.cell.visual_spec();
 
-        info!(
-            "Spawning cell at ({}, {}) of type {:?}",
-            grid_pos.x, grid_pos.y, cell,
-        );
+    info!(
+        "Spawning cell at ({}, {}) of type {:?}",
+        event.grid_pos.x, event.grid_pos.y, event.cell,
+    );
 
-        let mut entity_commands = commands.entity(entity);
-        insert_cell_visual(
-            &mut entity_commands,
-            spec,
-            transform,
-            *grid_pos,
-            &mut meshes,
-            &mut materials,
-        );
+    let mut entity_commands = commands.entity(event.entity);
+    insert_cell_visual(
+        &mut entity_commands,
+        spec,
+        transform,
+        event.grid_pos,
+        &mut meshes,
+        &mut materials,
+    );
 
-        entity_commands
-            .observe(observe_cell_hover)
-            .observe(observe_cell_out);
-    }
-}
-
-/// System to invoke genome actions for cells that have genomes (Sprout and Seed cells).
-pub fn invoke_cell_genome_actions_system(
-    commands: Commands,
-    mut rng: Single<&mut WyRand, With<GlobalRng>>,
-    cell_positions: Query<&GridPosition, With<Cell>>,
-    mut cells: Query<
-        (
-            &GridPosition,
-            &FacingDirection,
-            &mut Cell,
-            &Genome,
-            &mut GenomeID,
-        ),
-        With<GenomeActionable>,
-    >,
-    organic_energy_env: Res<OrganicEnergyEnvironment>,
-    charge_energy_env: Res<ChargeEnergyEnvironment>,
-) {
-    let cell_positions: HashSet<GridPosition> = cell_positions.iter().cloned().collect();
-    for (grid_pos, facing_dir, mut cell, genome, mut genome_id) in cells.iter_mut() {
-        let organic_energy = NeighbouringEnergy::new(grid_pos, facing_dir, &*organic_energy_env);
-        let charge_energy = NeighbouringEnergy::new(grid_pos, facing_dir, &*charge_energy_env);
-
-        let obstacles = ObstacleInfo {
-            left: cell_positions.contains(&grid_pos.offset(facing_dir.left().delta())),
-            forward: cell_positions.contains(&grid_pos.offset(facing_dir.forward().delta())),
-            right: cell_positions.contains(&grid_pos.offset(facing_dir.right().delta())),
-        };
-
-        let precondition = PreconditionParameters {
-            organic_energy,
-            charge_energy,
-            obstacles,
-            cell_energy_has_increased: true, // TODO: track this properly
-            rng_value: rng.random(),
-        };
-
-        let action = genome.execute(&mut genome_id, &precondition);
-
-        match *cell {
-            Cell::Sprout => match action.multi_cell_command {
-                MultiCellCommand::SkipTurn => {
-                    *genome_id = action.multi_cell_success_next_genome;
-                }
-                MultiCellCommand::BecomeASeed => {
-                    *genome_id = action.multi_cell_success_next_genome;
-                    *cell = Cell::Seed(SeedCell::DormantSeed);
-                }
-                MultiCellCommand::BecomeADetachedSeed { is_stationary } => {
-                    *genome_id = action.multi_cell_success_next_genome;
-                    *cell = Cell::Seed(SeedCell::DetachedSeed { is_stationary });
-                }
-                MultiCellCommand::Die => todo!(),
-                MultiCellCommand::SeparateFromOrganism => todo!(),
-                MultiCellCommand::TransportSoilEnergy(relative_direction) => todo!(),
-                MultiCellCommand::TransportSoilOrganicMatter(relative_direction) => {
-                    todo!()
-                }
-                MultiCellCommand::ShootSeed { high_energy } => todo!(),
-                MultiCellCommand::DistributeEnergyAsOrganicMatter => todo!(),
-            },
-            Cell::Seed(seed_type) => match action.single_cell_command {
-                SingleCellCommand::MoveForward => todo!(),
-                SingleCellCommand::TurnLeft => todo!(),
-                SingleCellCommand::TurnRight => todo!(),
-                SingleCellCommand::TurnAround => todo!(),
-                SingleCellCommand::TurnLeftAndMove => todo!(),
-                SingleCellCommand::TurnRightAndMove => todo!(),
-                SingleCellCommand::TurnAroundAndMove => todo!(),
-                SingleCellCommand::TurnRandom => todo!(),
-                SingleCellCommand::MoveRandom => todo!(),
-                SingleCellCommand::Parasitise => todo!(),
-                SingleCellCommand::PullOrganicFromLeft => todo!(),
-                SingleCellCommand::PullOrganicFromRight => todo!(),
-                SingleCellCommand::PullOrganicFromForward => todo!(),
-                SingleCellCommand::PullChargeFromLeft => todo!(),
-                SingleCellCommand::PullChargeFromRight => todo!(),
-                SingleCellCommand::PullChargeFromForward => todo!(),
-                SingleCellCommand::ConsumeNeighbours => todo!(),
-                SingleCellCommand::TakeEnergyFromSoil => todo!(),
-            },
-            _ => unreachable!("Only Sprout and Seed cells should have genomes"),
-        }
-    }
+    entity_commands
+        .observe(observe_cell_hover)
+        .observe(observe_cell_out);
 }
