@@ -1,17 +1,27 @@
-use bevy::prelude::{
-    Assets, ColorMaterial, Commands, Entity, EntityCommands, Mesh, MeshMaterial2d, Quat, Query,
-    ResMut, Single, Transform, Vec3, With, Without, default, info,
+use std::collections::HashSet;
+
+use bevy::{
+    ecs::system::Res,
+    prelude::{
+        Assets, ColorMaterial, Commands, Entity, EntityCommands, Mesh, MeshMaterial2d, Quat, Query,
+        ResMut, Single, Transform, Vec3, With, Without, default, info,
+    },
 };
 use bevy_rand::{global::GlobalRng, prelude::WyRand};
+use rand::RngExt;
 
 use crate::{
     GridPosition, TILE_SIZE,
     cells::{
         Cell, CellEnergy, CellRenderBundle, CellVisualSpec, Direction, FacingDirection,
-        GenomeActionable, Mesh2d,
+        GenomeActionable, Mesh2d, SeedCell,
     },
-    genes::{Genome, GenomeID},
+    energy::{ChargeEnergyEnvironment, NeighbouringEnergy, OrganicEnergyEnvironment},
+    genes::{
+        Genome, GenomeID, MultiCellCommand, ObstacleInfo, PreconditionParameters, SingleCellCommand,
+    },
     input::{observe_cell_hover, observe_cell_out},
+    utils::grid_pos_to_world_pos,
 };
 
 /// Spawns a new cell entity with the specified components.
@@ -44,15 +54,6 @@ fn facing_rotation(direction: Direction) -> Quat {
         Direction::West => Quat::from_rotation_z(std::f32::consts::PI),
         Direction::North => Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
     }
-}
-
-/// Converts a grid position to a world position for rendering.
-#[inline]
-const fn grid_pos_to_world_pos(grid_pos: &GridPosition) -> Vec3 {
-    let world_x = grid_pos.x as f32 * TILE_SIZE;
-    let world_y = grid_pos.y as f32 * TILE_SIZE;
-
-    Vec3::new(world_x, world_y, 1.0)
 }
 
 /// Computes the world transform for a cell based on its grid position and facing direction.
@@ -132,15 +133,86 @@ pub fn draw_cells_system(
 
 /// System to invoke genome actions for cells that have genomes (Sprout and Seed cells).
 pub fn invoke_cell_genome_actions_system(
-    _commands: Commands,
-    _rng: Single<&mut WyRand, With<GlobalRng>>,
-    mut cells: Query<(&GridPosition, &Cell, &Genome, &mut GenomeID), With<GenomeActionable>>,
+    commands: Commands,
+    mut rng: Single<&mut WyRand, With<GlobalRng>>,
+    cell_positions: Query<&GridPosition, With<Cell>>,
+    mut cells: Query<
+        (
+            &GridPosition,
+            &FacingDirection,
+            &mut Cell,
+            &Genome,
+            &mut GenomeID,
+        ),
+        With<GenomeActionable>,
+    >,
+    organic_energy_env: Res<OrganicEnergyEnvironment>,
+    charge_energy_env: Res<ChargeEnergyEnvironment>,
 ) {
-    for (_grid_pos, _cell, _genome, _genome_id) in cells.iter_mut() {
-        debug_assert!(
-            matches!(_cell, Cell::Sprout | Cell::Seed(_)),
-            "Only Sprout and Seed cells should have genomes"
-        );
-        // TODO: Implement
+    let cell_positions: HashSet<GridPosition> = cell_positions.iter().cloned().collect();
+    for (grid_pos, facing_dir, mut cell, genome, mut genome_id) in cells.iter_mut() {
+        let organic_energy = NeighbouringEnergy::new(grid_pos, facing_dir, &*organic_energy_env);
+        let charge_energy = NeighbouringEnergy::new(grid_pos, facing_dir, &*charge_energy_env);
+
+        let obstacles = ObstacleInfo {
+            left: cell_positions.contains(&grid_pos.offset(facing_dir.left().delta())),
+            forward: cell_positions.contains(&grid_pos.offset(facing_dir.forward().delta())),
+            right: cell_positions.contains(&grid_pos.offset(facing_dir.right().delta())),
+        };
+
+        let precondition = PreconditionParameters {
+            organic_energy,
+            charge_energy,
+            obstacles,
+            cell_energy_has_increased: true, // TODO: track this properly
+            rng_value: rng.random(),
+        };
+
+        let action = genome.execute(&mut genome_id, &precondition);
+
+        match *cell {
+            Cell::Sprout => match action.multi_cell_command {
+                MultiCellCommand::SkipTurn => {
+                    *genome_id = action.multi_cell_success_next_genome;
+                }
+                MultiCellCommand::BecomeASeed => {
+                    *genome_id = action.multi_cell_success_next_genome;
+                    *cell = Cell::Seed(SeedCell::DormantSeed);
+                }
+                MultiCellCommand::BecomeADetachedSeed { is_stationary } => {
+                    *genome_id = action.multi_cell_success_next_genome;
+                    *cell = Cell::Seed(SeedCell::DetachedSeed { is_stationary });
+                }
+                MultiCellCommand::Die => todo!(),
+                MultiCellCommand::SeparateFromOrganism => todo!(),
+                MultiCellCommand::TransportSoilEnergy(relative_direction) => todo!(),
+                MultiCellCommand::TransportSoilOrganicMatter(relative_direction) => {
+                    todo!()
+                }
+                MultiCellCommand::ShootSeed { high_energy } => todo!(),
+                MultiCellCommand::DistributeEnergyAsOrganicMatter => todo!(),
+            },
+            Cell::Seed(seed_type) => match action.single_cell_command {
+                SingleCellCommand::MoveForward => todo!(),
+                SingleCellCommand::TurnLeft => todo!(),
+                SingleCellCommand::TurnRight => todo!(),
+                SingleCellCommand::TurnAround => todo!(),
+                SingleCellCommand::TurnLeftAndMove => todo!(),
+                SingleCellCommand::TurnRightAndMove => todo!(),
+                SingleCellCommand::TurnAroundAndMove => todo!(),
+                SingleCellCommand::TurnRandom => todo!(),
+                SingleCellCommand::MoveRandom => todo!(),
+                SingleCellCommand::Parasitise => todo!(),
+                SingleCellCommand::PullOrganicFromLeft => todo!(),
+                SingleCellCommand::PullOrganicFromRight => todo!(),
+                SingleCellCommand::PullOrganicFromForward => todo!(),
+                SingleCellCommand::PullChargeFromLeft => todo!(),
+                SingleCellCommand::PullChargeFromRight => todo!(),
+                SingleCellCommand::PullChargeFromForward => todo!(),
+                SingleCellCommand::ConsumeNeighbours => todo!(),
+                SingleCellCommand::TakeEnergyFromSoil => todo!(),
+            },
+            _ => unreachable!("Only Sprout and Seed cells should have genomes"),
+        }
     }
 }

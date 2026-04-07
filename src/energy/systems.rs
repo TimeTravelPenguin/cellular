@@ -1,17 +1,26 @@
 use bevy::{
+    asset::Assets,
+    camera::visibility::Visibility,
+    color::Color,
+    math::primitives::Rectangle,
+    mesh::{Mesh, Mesh2d},
     platform::collections::HashMap,
     prelude::{Commands, Entity, Mut, Query, Res, ResMut, Resource, With, Without, World, info},
+    sprite_render::{ColorMaterial, MeshMaterial2d},
+    transform::components::Transform,
 };
 use itertools::Itertools;
 
 use crate::{
-    SimulationStep,
+    SimulationSettings, SimulationStep, TILE_SIZE,
     cells::{Cell, CellIsDying},
     energy::{
         CHARGE_TOXICITY_LEVEL, CellEnergy, CellRequestChargeEnergy, CellRequestOrganicEnergy,
         CellRequestSolarEnergy, ChargeEnergyEnvironment, EnergyEnvironmentTrait, EnergyTransferer,
-        GridPosition, ORGANIC_TOXICICITY_LEVEL, OrganicEnergyEnvironment, SunlightCycle,
+        GridPosition, ORGANIC_TOXICICITY_LEVEL, OrganicEnergyEnvironment, RenderedEnergyTile,
+        SunlightCycle,
     },
+    utils::grid_pos_to_world_pos,
 };
 
 pub fn charge_energy_system(mut charge_env: ResMut<ChargeEnergyEnvironment>) {
@@ -167,6 +176,78 @@ pub fn transfer_energy_system(world: &mut World) {
             .expect("Entity should have CellEnergy component");
 
         cell_energy.0 += energy;
+    }
+}
+
+pub fn init_energy_view_system(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    simulation_setting: Res<SimulationSettings>,
+    organic_energy_env: Res<OrganicEnergyEnvironment>,
+    charge_energy_env: Res<ChargeEnergyEnvironment>,
+    solar_energy_env: Res<SunlightCycle>,
+) {
+    let width = simulation_setting.grid_width;
+    let height = simulation_setting.grid_height;
+
+    let positions = (0..width)
+        .cartesian_product(0..height)
+        .map(|(x, y)| GridPosition { x, y });
+
+    for grid_pos in positions {
+        let transform = Transform::from_translation(grid_pos_to_world_pos(&grid_pos));
+        let tile = RenderedEnergyTile {
+            solar: solar_energy_env.sunlight(0.0),
+            organic: organic_energy_env.peek(grid_pos.x, grid_pos.y).unwrap_or(0) as f64,
+            charge: charge_energy_env.peek(grid_pos.x, grid_pos.y).unwrap_or(0) as f64,
+        };
+
+        commands.spawn((
+            grid_pos,
+            transform,
+            tile,
+            Mesh2d(meshes.add(Rectangle::new(TILE_SIZE, TILE_SIZE))),
+            MeshMaterial2d(materials.add(tile.solar_color())),
+            Visibility::Hidden,
+        ));
+    }
+}
+
+pub fn update_energy_view_system(
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut query: Query<(
+        &GridPosition,
+        &mut RenderedEnergyTile,
+        &MeshMaterial2d<ColorMaterial>,
+        &mut Visibility,
+    )>,
+    simulation_settings: Res<SimulationSettings>,
+    organic_energy_env: Res<OrganicEnergyEnvironment>,
+    charge_energy_env: Res<ChargeEnergyEnvironment>,
+    solar_energy_env: Res<SunlightCycle>,
+    simulation_step: Res<SimulationStep>,
+) {
+    for (grid_pos, mut tile, material, mut visibility) in query.iter_mut() {
+        tile.solar = solar_energy_env.sunlight(simulation_step.0 as f64);
+        tile.organic = organic_energy_env.peek(grid_pos.x, grid_pos.y).unwrap_or(0) as f64;
+        tile.charge = charge_energy_env.peek(grid_pos.x, grid_pos.y).unwrap_or(0) as f64;
+
+        let colour = match simulation_settings.view {
+            crate::SimulationView::Grid => Color::WHITE,
+            crate::SimulationView::OrganicEnergy => tile.organic_color(),
+            crate::SimulationView::ChargeEnergy => tile.charge_color(),
+        };
+
+        if let Some(material) = materials.get_mut(&material.0) {
+            material.color = colour;
+        }
+
+        if matches!(simulation_settings.view, crate::SimulationView::Grid) {
+            *visibility = Visibility::Hidden;
+        } else {
+            *visibility = Visibility::Visible;
+        }
     }
 }
 

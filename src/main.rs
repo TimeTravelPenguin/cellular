@@ -18,13 +18,14 @@ use rand::RngExt;
 use crate::{
     cells::{
         Cell, CellInfo, Direction, FacingDirection, SeedCell, UpdateCellInfoMessage,
-        draw_cells_system, spawn_cell,
+        draw_cells_system, invoke_cell_genome_actions_system, spawn_cell,
     },
     energy::{
         CellEnergy, ChargeEnergyEnvironment, OrganicEnergyEnvironment, SunlightCycle,
         cell_collect_charge_energy_system, cell_collect_organic_energy_system,
         cell_collect_solar_energy_system, cell_request_energy_system, charge_energy_system,
-        kill_toxic_cells_system, transfer_energy_system,
+        init_energy_view_system, kill_toxic_cells_system, transfer_energy_system,
+        update_energy_view_system,
     },
     genes::{Genome, GenomeID},
     input::SimulationInputPlugin,
@@ -36,6 +37,7 @@ mod energy;
 mod genes;
 mod input;
 mod simulation;
+mod utils;
 
 const TILE_SIZE: f32 = 10.0;
 const CELL_GREEN: Color = Color::linear_rgb(23.0 / 255.0, 185.0 / 255.0, 0.0 / 255.0);
@@ -50,6 +52,15 @@ pub struct SimulationStep(usize);
 pub struct GridPosition {
     pub x: usize,
     pub y: usize,
+}
+
+impl GridPosition {
+    pub fn offset(&self, (dx, dy): (isize, isize)) -> Self {
+        let new_x = (self.x as isize + dx).max(0) as usize;
+        let new_y = (self.y as isize + dy).max(0) as usize;
+
+        Self { x: new_x, y: new_y }
+    }
 }
 
 #[derive(Component, Reflect, Clone, Debug)]
@@ -161,16 +172,16 @@ fn main() {
             (
                 setup_camera_system,
                 draw_world_grid_system,
+                init_energy_view_system,
                 // initialize_sprouts_system,
                 add_test_cells,
             ),
         )
-        .add_systems(Update, draw_cells_system)
         .add_systems(
             Update,
             (
                 (
-                    // invoke_cell_genome_actions_system,
+                    invoke_cell_genome_actions_system,
                     transfer_energy_system,
                     cell_request_energy_system,
                     cell_collect_solar_energy_system,
@@ -180,6 +191,8 @@ fn main() {
                 )
                     .chain(),
                 charge_energy_system,
+                draw_cells_system,
+                // update_energy_view_system,
                 // shuffle_cells_system,
             ),
         )

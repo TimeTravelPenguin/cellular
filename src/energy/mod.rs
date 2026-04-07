@@ -1,14 +1,16 @@
 use bevy::{
+    color::Color,
     ecs::{component::Component, entity::Entity, resource::Resource},
     prelude::{Deref, DerefMut},
     reflect::Reflect,
 };
+use itertools::Itertools;
 use log::info;
 use serde::{Deserialize, Serialize};
 
 mod systems;
 
-use crate::GridPosition;
+use crate::{GridPosition, cells::FacingDirection};
 
 pub use self::systems::*;
 
@@ -31,6 +33,46 @@ pub enum Energy {
     Charge,
 }
 
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+pub struct RenderedEnergyTile {
+    pub solar: f64,
+    pub organic: f64,
+    pub charge: f64,
+}
+
+impl RenderedEnergyTile {
+    pub const MAX_SOLAR_ILLUMINOCITY: f64 = SunlightCycle::MAX_SUNLIGHT;
+    pub const MAX_ORGANIC_ILLUMINOCITY: f64 = ORGANIC_TOXICICITY_LEVEL as f64;
+    pub const MAX_CHARGE_ILLUMINOCITY: f64 = CHARGE_LIMIT as f64;
+
+    pub fn set_solar(&mut self, solar: f64) {
+        self.solar = solar;
+    }
+
+    pub fn set_organic(&mut self, organic: f64) {
+        self.organic = organic;
+    }
+
+    pub fn set_charge(&mut self, charge: f64) {
+        self.charge = charge;
+    }
+
+    pub fn solar_color(&self) -> Color {
+        let intensity = (self.solar as f64 / Self::MAX_SOLAR_ILLUMINOCITY).min(1.0);
+        Color::hsv(60.0, 1.0, intensity as f32)
+    }
+
+    pub fn organic_color(&self) -> Color {
+        let intensity = (self.organic as f64 / Self::MAX_ORGANIC_ILLUMINOCITY).min(1.0);
+        Color::hsv(0.0, 1.0, intensity as f32)
+    }
+
+    pub fn charge_color(&self) -> Color {
+        let intensity = (self.charge as f64 / Self::MAX_CHARGE_ILLUMINOCITY).min(1.0);
+        Color::hsv(240.0, 1.0, intensity as f32)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NeighbouringEnergy {
     pub forward: u32,
@@ -38,6 +80,38 @@ pub struct NeighbouringEnergy {
     pub right: u32,
     pub center: u32,
     pub total3x3: u32,
+}
+
+impl NeighbouringEnergy {
+    pub fn new(
+        pos: &GridPosition,
+        facing: &FacingDirection,
+        energy_env: &impl EnergyEnvironmentTrait,
+    ) -> Self {
+        let forward_pos = pos.offset(facing.0.delta());
+        let left_pos = pos.offset(facing.left().delta());
+        let right_pos = pos.offset(facing.right().delta());
+
+        let forward = energy_env.peek(forward_pos.x, forward_pos.y).unwrap_or(0);
+        let left = energy_env.peek(left_pos.x, left_pos.y).unwrap_or(0);
+        let right = energy_env.peek(right_pos.x, right_pos.y).unwrap_or(0);
+        let center = energy_env.peek(pos.x, pos.y).unwrap_or(0);
+
+        let tiles3x3 = (-1..=1).cartesian_product(-1..=1).map(|(dx, dy)| {
+            let neighbour_pos = pos.offset((dx, dy));
+            energy_env
+                .peek(neighbour_pos.x, neighbour_pos.y)
+                .unwrap_or(0)
+        });
+
+        NeighbouringEnergy {
+            forward,
+            left,
+            right,
+            center,
+            total3x3: tiles3x3.sum(),
+        }
+    }
 }
 
 #[derive(Resource, Reflect, Clone, Debug)]
@@ -64,11 +138,11 @@ impl Default for SunlightCycle {
 }
 
 impl SunlightCycle {
-    const INITIAL_SUNLIGHT: f64 = 20.0;
-    const MIN_SUNLIGHT: f64 = 1.0;
-    const MAX_SUNLIGHT: f64 = 10.0;
-    const SUNLIGHT_OFFSET: f64 = 50.0;
-    const SUNLIGHT_PERIOD: f64 = 30.0;
+    pub const INITIAL_SUNLIGHT: f64 = 20.0;
+    pub const MIN_SUNLIGHT: f64 = 1.0;
+    pub const MAX_SUNLIGHT: f64 = 10.0;
+    pub const SUNLIGHT_OFFSET: f64 = 50.0;
+    pub const SUNLIGHT_PERIOD: f64 = 30.0;
 
     pub fn new(
         period: f64,

@@ -87,6 +87,18 @@ impl FacingDirection {
             Direction::West => Direction::East,
         }
     }
+
+    pub fn left(&self) -> Direction {
+        self.relative(RelativeDirection::Left)
+    }
+
+    pub fn right(&self) -> Direction {
+        self.relative(RelativeDirection::Right)
+    }
+
+    pub fn forward(&self) -> Direction {
+        self.relative(RelativeDirection::Forward)
+    }
 }
 
 #[derive(Reflect, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
