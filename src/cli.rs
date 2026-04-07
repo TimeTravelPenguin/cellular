@@ -1,11 +1,22 @@
-#[derive(clap::Parser, Debug)]
+use std::path::PathBuf;
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
-    /// The width of the simulation grid.
-    #[arg(short, long, default_value_t = 100)]
-    pub width: usize,
+    #[command(subcommand)]
+    pub command: Command,
+}
 
-    /// The height of the simulation grid.
-    #[arg(short, long, default_value_t = 100)]
-    pub height: usize,
+#[derive(Parser, Debug)]
+pub enum Command {
+    Run {
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
+    Config {
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }

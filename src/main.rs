@@ -13,6 +13,7 @@ use bevy_rand::{
     global::GlobalRng,
     prelude::{EntropyPlugin, WyRand},
 };
+use clap::Parser;
 use rand::RngExt;
 
 use crate::{
@@ -27,12 +28,15 @@ use crate::{
         init_energy_view_system, kill_toxic_cells_system, transfer_energy_system,
         update_energy_view_system,
     },
+    cli::{Cli, Command},
+    config::SimulationConfig,
     genes::{Genome, GenomeID},
     input::SimulationInputPlugin,
 };
 
 mod cells;
 mod cli;
+mod config;
 mod energy;
 mod genes;
 mod input;
@@ -86,54 +90,61 @@ pub struct SimulationSettings {
     pub view: SimulationView,
 }
 
-impl Default for SimulationSettings {
-    fn default() -> Self {
-        let grid_height = 50;
-        let grid_width = 100;
-        Self {
-            grid_height,
-            grid_width,
-            speed_multiplier: 10.0,
-            initial_sprout_count: grid_height * grid_width / 20,
-            view: SimulationView::Grid,
+fn main() {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Command::Run { config } => {
+            let config = if let Some(config_path) = config {
+                std::fs::read_to_string(config_path)
+                    .ok()
+                    .and_then(|contents| toml::from_str(&contents).ok())
+                    .unwrap_or_else(|| {
+                        eprintln!("Failed to read or parse config file, using default config");
+                        SimulationConfig::default()
+                    })
+            } else {
+                SimulationConfig::default()
+            };
+
+            run_simulation(config);
+        }
+        Command::Config { output } => {
+            let toml_config = toml::to_string_pretty(&SimulationConfig::default())
+                .expect("Failed to serialize default config");
+
+            if let Some(output_path) = output {
+                std::fs::write(output_path, toml_config)
+                    .expect("Failed to write default config to file");
+
+                return;
+            }
+
+            println!("{}", toml_config);
         }
     }
 }
 
-// Simulation Overview:
-// Each cell is one of the following types:
-// - Single Cellular: This consists only of a seed that may or may not be
-//     attached to a parent cell. This cell executes the genome and can perform
-//     actions.
-// - Multi Cellular:
-//   - Sprout: This cell executes the genome and can perform actions, such as
-//       producing new child cells in adjacent grid spaces.
-//   - Leaf: Collects energy from sunlight.
-//   - Antenna: Collects energy from charge in the environment.
-//   - Root: Collects energy from organic matter in the environment.
-//   - Branch: A cell that connects other cells together, transferring energy
-//       between all connected cells.
-
-// 1. Step through each gene-executing cell and invoke their genome to get a
-//    command. Store this command as a component on the cell entity.
-// 2. Process each genome command component, applying its effects to the cell
-//    and/or environment, and then remove the command component.
-// 3. Perform actions of non-genome-command cells.
-// 4. Perform a step in energy transfer between connected cells.
-
-fn main() {
-    let simulation_settings = SimulationSettings::default();
+fn run_simulation(config: SimulationConfig) {
+    let simulation_settings = SimulationSettings {
+        grid_width: config.simulation.width,
+        grid_height: config.simulation.height,
+        initial_sprout_count: config.simulation.initial_sprout_count,
+        speed_multiplier: 1.0,
+        view: SimulationView::Grid,
+    };
 
     let organic_energy_env = OrganicEnergyEnvironment::new(
         simulation_settings.grid_width,
         simulation_settings.grid_height,
-        50,
+        config.environment.initial_organic_energy,
     );
 
     let charge_energy_env = ChargeEnergyEnvironment::new(
         simulation_settings.grid_width,
         simulation_settings.grid_height,
-        20,
+        config.environment.initial_charge_energy,
+    );
     );
 
     App::new()

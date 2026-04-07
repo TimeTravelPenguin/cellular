@@ -22,6 +22,7 @@ serde_json = "1.0.149"
 serde_with = "3.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.18"
+toml = "1.1.2"
 
 [target.'cfg(all(target_family = "wasm", any(target_os = "unknown", target_os = "none")))'.dependencies]
 bevy_rand = { version = "0.14", features = ["wasm_js"] }
