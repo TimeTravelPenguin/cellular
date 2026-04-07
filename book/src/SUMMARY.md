@@ -7,3 +7,5 @@
   - [Cells](./02_details/cells.md)
   - [Environments]()
   - [Cell Genome]()
+  - [Systems](./02_details/systems.md)
+- [Dev Plan](./REFACTOR_PLAN.md)
