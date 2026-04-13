@@ -5,18 +5,26 @@ use bevy::{
 };
 
 use crate::{
-    Grid, SimulationSettings, SimulationView, ToggleGridVisible, UpdateCellInfoMessage, cells::Cell,
+    Grid, SimulationSettings, SimulationState, SimulationView, ToggleGridVisible,
+    UpdateCellInfoMessage, cells::Cell,
 };
+
+#[derive(Message)]
+struct Pause(bool);
 
 pub struct SimulationInputPlugin;
 
 impl Plugin for SimulationInputPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            PreUpdate,
-            (toggle_grid_visibility_system.run_if(resource_exists::<ToggleGridVisible>),),
-        )
-        .add_systems(Update, (move_camera_system, process_keyboard_system));
+        app.add_message::<Pause>()
+            .add_systems(
+                PreUpdate,
+                (
+                    toggle_grid_visibility_system.run_if(resource_exists::<ToggleGridVisible>),
+                    pause_system,
+                ),
+            )
+            .add_systems(Update, (move_camera_system, process_keyboard_system));
     }
 }
 
@@ -82,6 +90,9 @@ fn move_camera_system(
 fn process_keyboard_system(
     mut commands: Commands,
     mut simulation_settings: ResMut<SimulationSettings>,
+    mut time: ResMut<Time<Fixed>>,
+    simulation_state: Res<State<SimulationState>>,
+    mut pause_writer: MessageWriter<Pause>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if keyboard.just_pressed(KeyCode::KeyG) {
@@ -114,19 +125,52 @@ fn process_keyboard_system(
         commands.insert_resource(ToggleGridVisible);
     }
 
+    if keyboard.just_pressed(KeyCode::Space) {
+        match simulation_state.get() {
+            SimulationState::Running => {
+                pause_writer.write(Pause(true));
+            }
+            SimulationState::Paused => {
+                pause_writer.write(Pause(false));
+            }
+        }
+    }
+
+    let tick_rate = &mut simulation_settings.config.simulation.tick_rate;
     if keyboard.just_pressed(KeyCode::Equal) {
-        simulation_settings.speed_multiplier += 0.5;
+        *tick_rate = (*tick_rate).saturating_mul(2).min(1000);
+        time.set_timestep_hz(*tick_rate as f64);
+
         info!(
-            "Increased simulation speed to {}x",
-            simulation_settings.speed_multiplier
+            "Increased simulation speed to {} ticks per second",
+            tick_rate
         );
     } else if keyboard.just_pressed(KeyCode::Minus) {
-        simulation_settings.speed_multiplier =
-            (simulation_settings.speed_multiplier - 0.5).max(0.5);
+        *tick_rate = (*tick_rate).saturating_div(2).max(1);
+        time.set_timestep_hz(*tick_rate as f64);
+
         info!(
-            "Decreased simulation speed to {}x",
-            simulation_settings.speed_multiplier
+            "Decreased simulation speed to {} ticks per second",
+            tick_rate
         );
+    }
+}
+
+fn pause_system(
+    mut time: ResMut<Time<Virtual>>,
+    mut next_state: ResMut<NextState<SimulationState>>,
+    mut pause_reader: MessageReader<Pause>,
+) {
+    for pause in pause_reader.read() {
+        if pause.0 {
+            time.pause();
+            next_state.set(SimulationState::Paused);
+            info!("Simulation paused");
+        } else {
+            time.unpause();
+            next_state.set(SimulationState::Running);
+            info!("Simulation resumed");
+        }
     }
 }
 

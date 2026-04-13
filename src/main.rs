@@ -44,8 +44,8 @@ const CELL_ORANGE: Color = Color::linear_rgb(235.0 / 255.0, 138.0 / 255.0, 64.0 
 const CELL_BLUE: Color = Color::linear_rgb(82.0 / 255.0, 107.0 / 255.0, 1.0);
 const CELL_BROWN: Color = Color::linear_rgb(30.0 / 255.0, 20.0 / 255.0, 10.0 / 255.0);
 
-#[derive(Resource, Reflect, Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SimulationStep(usize);
+#[derive(Resource, Reflect, Clone, Copy, Debug, Default, PartialEq, Eq, Deref, DerefMut)]
+pub struct SimulationStep(pub usize);
 
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GridPosition {
@@ -67,6 +67,13 @@ pub struct Grid;
 
 #[derive(Resource, Reflect, Clone, Debug)]
 pub struct ToggleGridVisible;
+
+#[derive(States, Reflect, Default, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SimulationState {
+    #[default]
+    Running,
+    Paused,
+}
 
 #[derive(Default, Reflect, Clone, Debug)]
 pub enum SimulationView {
@@ -176,6 +183,8 @@ fn run_simulation(config: SimulationConfig) {
         .insert_resource(organic_energy_env)
         .insert_resource(charge_energy_env)
         .insert_resource(simulation_grid)
+        .insert_resource(Time::<Fixed>::from_hz(config.simulation.tick_rate as f64))
+        .init_state::<SimulationState>()
         .init_resource::<SimulationStep>()
         .add_message::<UpdateCellInfoMessage>()
         .add_systems(EguiPrimaryContextPass, cell_info_ui_system)
@@ -188,10 +197,17 @@ fn run_simulation(config: SimulationConfig) {
                 // add_test_cells,
             ),
         )
-        .add_systems(Update, (shuffle_cells_system,))
-        .add_systems(PostUpdate, |mut step: ResMut<SimulationStep>| {
-            step.0 += 1;
-        })
+        .add_systems(
+            FixedUpdate,
+            (shuffle_cells_system,).run_if(in_state(SimulationState::Running)),
+        )
+        .add_systems(
+            PostUpdate,
+            (|mut step: ResMut<SimulationStep>| {
+                step.0 += 1;
+            })
+            .run_if(in_state(SimulationState::Running)),
+        )
         .run();
 }
 
