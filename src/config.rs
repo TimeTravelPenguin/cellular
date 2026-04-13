@@ -1,13 +1,15 @@
-use bevy::ecs::component::Component;
+use bevy::{ecs::component::Component, reflect::Reflect};
 use serde::{Deserialize, Serialize};
 
 /// Configuration parameters for the simulation.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Reflect, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SimulationParameters {
     /// Height of the simulation grid
     pub height: usize,
     /// Width of the simulation grid
     pub width: usize,
+    /// Initial simulation speed in ticks per second
+    pub tick_rate: u32,
     /// Initial number of Sprout cells in the simulation
     pub initial_sprout_count: usize,
 }
@@ -17,6 +19,7 @@ impl Default for SimulationParameters {
         Self {
             height: 100,
             width: 100,
+            tick_rate: 10,
             // Start with 10% of the grid filled with Sprout cells
             initial_sprout_count: 100 * 100 / 10,
         }
@@ -24,7 +27,7 @@ impl Default for SimulationParameters {
 }
 
 /// Configuration parameters for energy extraction rates for different cell types.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Reflect, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ExtractionRateConfig {
     /// Root organic energy extraction per tick
     pub root_extract_rate: f32,
@@ -45,7 +48,7 @@ impl Default for ExtractionRateConfig {
 }
 
 /// Configuration parameters for toxicity thresholds for organic and charge energy.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Reflect, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ToxicityThresholdConfig {
     /// Toxic threshold for organic energy
     pub organic_toxic_threshold: f32,
@@ -63,7 +66,7 @@ impl Default for ToxicityThresholdConfig {
 }
 
 /// Configuration parameters for energy costs to keep different cell types alive per tick.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Reflect, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CellLivingCostConfig {
     /// Energy cost per tick for Leaf cells
     pub leaf_living_cost: f32,
@@ -94,7 +97,7 @@ impl Default for CellLivingCostConfig {
 
 /// Configuration parameters for energy redistribution upon cell death, specifying
 /// how much organic energy is released for each cell type when it dies.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Reflect, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CellDeathEnergyRedistributionConfig {
     pub leaf_organic_death_energy: f32,
     pub root_organic_death_energy: f32,
@@ -118,7 +121,7 @@ impl Default for CellDeathEnergyRedistributionConfig {
 }
 
 /// Configuration parameters for energy costs of cell actions like moving and reproducing.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Reflect, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CellActionCostConfig {
     /// Energy cost for moving a Sprout cell
     pub sprout_move_cost: f32,
@@ -142,7 +145,7 @@ impl Default for CellActionCostConfig {
 }
 
 /// Configuration parameters for the environment.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Reflect, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EnvironmentConfig {
     /// Base light energy factor for Leaf cells
     pub light_energy: f32,
@@ -166,7 +169,7 @@ impl Default for EnvironmentConfig {
 }
 
 /// Configuration parameters for cell defaults.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Reflect, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CellDefaults {
     /// Default cell lifespan in ticks
     pub max_ticks_without_energy: u32,
@@ -182,7 +185,7 @@ impl Default for CellDefaults {
 
 /// Configuration parameters for the plant simulation, including energy
 /// extraction rates, thresholds, and costs.
-#[derive(Component, Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Component, Reflect, Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct SimulationConfig {
     /// Simulation parameters
     pub simulation: SimulationParameters,

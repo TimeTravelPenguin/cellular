@@ -85,10 +85,7 @@ pub enum SimulationView {
 
 #[derive(Resource, Reflect, Clone, Debug)]
 pub struct SimulationSettings {
-    pub speed_multiplier: f32,
-    pub grid_height: usize,
-    pub grid_width: usize,
-    pub initial_sprout_count: usize,
+    pub config: SimulationConfig,
     pub view: SimulationView,
 }
 
@@ -129,28 +126,25 @@ fn main() {
 
 fn run_simulation(config: SimulationConfig) {
     let simulation_settings = SimulationSettings {
-        grid_width: config.simulation.width,
-        grid_height: config.simulation.height,
-        initial_sprout_count: config.simulation.initial_sprout_count,
-        speed_multiplier: 1.0,
+        config,
         view: SimulationView::Grid,
     };
 
     let organic_energy_env = OrganicEnergyEnvironment::new(
-        simulation_settings.grid_width,
-        simulation_settings.grid_height,
+        config.simulation.width,
+        config.simulation.height,
         config.environment.initial_organic_energy,
     );
 
     let charge_energy_env = ChargeEnergyEnvironment::new(
-        simulation_settings.grid_width,
-        simulation_settings.grid_height,
+        config.simulation.width,
+        config.simulation.height,
         config.environment.initial_charge_energy,
     );
 
     let simulation_grid = SimulationGrid::new(
-        simulation_settings.grid_width,
-        simulation_settings.grid_height,
+        config.simulation.width,
+        config.simulation.height,
         simulation::GridBoundary::Fixed,
     );
 
@@ -213,8 +207,8 @@ fn run_simulation(config: SimulationConfig) {
 
 fn setup_camera_system(mut commands: Commands, simulation_settings: Res<SimulationSettings>) {
     // Spawn a 2D camera centered on the grid
-    let half_w = simulation_settings.grid_width as f32 * 10.0 / 2.0;
-    let half_h = simulation_settings.grid_height as f32 * 10.0 / 2.0;
+    let half_w = simulation_settings.config.simulation.width as f32 * 10.0 / 2.0;
+    let half_h = simulation_settings.config.simulation.height as f32 * 10.0 / 2.0;
     commands.spawn((
         Camera2d,
         Transform::from_translation(Vec3::new(half_w, half_h, 0.0)),
@@ -260,10 +254,14 @@ fn initialize_sprouts_system(
 ) {
     let genome: Genome = rng.random();
 
-    let mut positions = HashSet::with_capacity(settings.initial_sprout_count);
-    while positions.len() < settings.initial_sprout_count {
-        let x = rng.random_range(0..settings.grid_width);
-        let y = rng.random_range(0..settings.grid_height);
+    let height = settings.config.simulation.height;
+    let width = settings.config.simulation.width;
+    let sprouts = settings.config.simulation.initial_sprout_count;
+
+    let mut positions = HashSet::with_capacity(sprouts);
+    while positions.len() < sprouts {
+        let x = rng.random_range(0..width);
+        let y = rng.random_range(0..height);
         positions.insert((x, y));
     }
 
@@ -292,12 +290,15 @@ fn shuffle_cells_system(
     mut rng: Single<&mut WyRand, With<GlobalRng>>,
     settings: Res<SimulationSettings>,
 ) {
+    let height = settings.config.simulation.height;
+    let width = settings.config.simulation.width;
+
     info!("Shuffling cells");
     let mut positions: HashSet<(usize, usize)> = HashSet::new();
     for (mut pos, mut transform) in query.iter_mut() {
         loop {
-            let x = rng.random_range(0..settings.grid_width);
-            let y = rng.random_range(0..settings.grid_height);
+            let x = rng.random_range(0..width);
+            let y = rng.random_range(0..height);
 
             if !positions.contains(&(x, y)) {
                 positions.insert((x, y));
@@ -320,13 +321,16 @@ fn draw_world_grid_system(
     mut materials: ResMut<Assets<ColorMaterial>>,
     simulation_settings: Res<SimulationSettings>,
 ) {
-    let grid_width = simulation_settings.grid_width as f32 * TILE_SIZE;
-    let grid_height = simulation_settings.grid_height as f32 * TILE_SIZE;
+    let sim_width = simulation_settings.config.simulation.width;
+    let sim_height = simulation_settings.config.simulation.height;
+
+    let grid_width = sim_width as f32 * TILE_SIZE;
+    let grid_height = sim_height as f32 * TILE_SIZE;
 
     let line_color = Color::linear_rgba(1.0, 1.0, 1.0, 0.1);
 
     // Draw vertical lines
-    for x in 0..=simulation_settings.grid_width {
+    for x in 0..=sim_width {
         let world_x = (x as f32 - 0.5) * TILE_SIZE;
         let mesh = Segment2d::new(
             Vec2::new(world_x, -0.5 * TILE_SIZE),
@@ -344,7 +348,7 @@ fn draw_world_grid_system(
     }
 
     // Draw horizontal lines
-    for y in 0..=simulation_settings.grid_height {
+    for y in 0..=sim_height {
         let world_y = (y as f32 - 0.5) * TILE_SIZE;
         let mesh = Segment2d::new(
             Vec2::new(-0.5 * TILE_SIZE, world_y),
