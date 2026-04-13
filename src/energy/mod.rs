@@ -26,8 +26,8 @@ pub fn index(width: usize, x: usize, y: usize) -> usize {
     y * width + x
 }
 
-#[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CellEnergy(pub u32);
+#[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Deref, DerefMut)]
+pub struct CellEnergy(pub f32);
 
 #[derive(Reflect, Clone, Copy, Debug)]
 pub enum Energy {

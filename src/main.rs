@@ -270,7 +270,7 @@ fn initialize_sprouts_system(
         commands
             .spawn((
                 SproutCell,
-                CellEnergy(10),
+                CellEnergy(10.0),
                 facing_direction,
                 GridPosition { x, y },
                 rng.random::<GenomeID>(),
