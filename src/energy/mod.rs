@@ -77,8 +77,8 @@ pub struct NeighbouringEnergy {
 //     }
 // }
 
-#[derive(Resource, Reflect, Clone, Debug)]
-pub struct OrganicEnergyEnvironment(EnergyEnvironment);
+#[derive(Resource, Reflect, Clone, Debug, Deref, DerefMut)]
+pub struct OrganicEnergyEnvironment(pub EnergyEnvironment);
 
 impl OrganicEnergyEnvironment {
     pub fn new(width: usize, height: usize, initial_energy: f32) -> Self {
@@ -86,8 +86,8 @@ impl OrganicEnergyEnvironment {
     }
 }
 
-#[derive(Resource, Reflect, Clone, Debug)]
-pub struct ChargeEnergyEnvironment(EnergyEnvironment);
+#[derive(Resource, Reflect, Clone, Debug, Deref, DerefMut)]
+pub struct ChargeEnergyEnvironment(pub EnergyEnvironment);
 
 impl ChargeEnergyEnvironment {
     pub fn new(width: usize, height: usize, initial_energy: f32) -> Self {
@@ -96,7 +96,7 @@ impl ChargeEnergyEnvironment {
 }
 
 #[derive(Reflect, Clone, Debug)]
-struct EnergyEnvironment {
+pub struct EnergyEnvironment {
     width: usize,
     height: usize,
     energy: Vec<f32>,
@@ -112,26 +112,38 @@ impl EnergyEnvironment {
     }
 }
 
-#[derive(Component, Reflect, Clone, Copy, Debug)]
-pub struct CellRequestSolarEnergy;
+pub trait EnergyEnvironmentTrait {
+    fn peek(&self, x: usize, y: usize) -> Option<f32>;
+    fn take(&mut self, x: usize, y: usize, amount: f32) -> Option<f32>;
+    fn add(&mut self, x: usize, y: usize, amount: f32);
+}
 
-#[derive(Component, Reflect, Clone, Copy, Debug)]
-pub struct CellRequestOrganicEnergy;
+impl EnergyEnvironmentTrait for EnergyEnvironment {
+    fn peek(&self, x: usize, y: usize) -> Option<f32> {
+        if x < self.width && y < self.height {
+            let idx = index(self.width, x, y);
+            Some(self.energy[idx])
+        } else {
+            None
+        }
+    }
 
-#[derive(Component, Reflect, Clone, Copy, Debug)]
-pub struct CellRequestChargeEnergy;
+    fn take(&mut self, x: usize, y: usize, amount: f32) -> Option<f32> {
+        if x < self.width && y < self.height {
+            let idx = index(self.width, x, y);
+            let available = self.energy[idx];
+            let taken = available.min(amount);
+            self.energy[idx] -= taken;
+            Some(taken)
+        } else {
+            None
+        }
+    }
 
-fn process_solar_requests_system(
-    mut query: Query<&mut CellEnergy, With<CellRequestSolarEnergy>>,
-    mut environment: ResMut<OrganicEnergyEnvironment>,
-) {
-    // mn = LIGHTENERGY  // 10
-    // for each of 8 neighbors:
-    //     if neighbor is LEAF → return 0  // complete shading
-    //     if neighbor exists (any cell) → mn -= 1
-    // return OrganicMap[X][Y] * mn * LIGHTCOEF  // organic * (10 - obstructions) * 0.0008
-
-    for mut energy in query.iter_mut() {
-        todo!("Implement solar energy collection system");
+    fn add(&mut self, x: usize, y: usize, amount: f32) {
+        if x < self.width && y < self.height {
+            let idx = index(self.width, x, y);
+            self.energy[idx] += amount;
+        }
     }
 }

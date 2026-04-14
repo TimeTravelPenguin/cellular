@@ -12,12 +12,15 @@ use bevy_rand::{global::GlobalRng, prelude::WyRand};
 use rand::RngExt;
 
 use crate::{
-    GridPosition, TILE_SIZE,
+    GridPosition, SimulationSettings, TILE_SIZE,
     cells::{
-        Cell, CellEnergy, CellRenderBundle, CellVisualSpec, Direction, FacingDirection, Mesh2d,
-        NewCellEvent,
+        Cell, CellEnergy, CellRenderBundle, CellVisualSpec, Direction, FacingDirection, LeafCell,
+        Mesh2d, NewCellEvent,
     },
-    energy::{ChargeEnergyEnvironment, NeighbouringEnergy, OrganicEnergyEnvironment},
+    energy::{
+        ChargeEnergyEnvironment, EnergyEnvironmentTrait, NeighbouringEnergy,
+        OrganicEnergyEnvironment,
+    },
     genes::{
         Genome, GenomeID, MultiCellCommand, ObstacleInfo, PreconditionParameters, SingleCellCommand,
     },
@@ -115,4 +118,26 @@ fn draw_new_cells_system(
     entity_commands
         .observe(observe_cell_hover)
         .observe(observe_cell_out);
+}
+
+pub fn leaf_cell_produce_energy_system(
+    mut query: Query<(&GridPosition, &mut CellEnergy), With<LeafCell>>,
+    organic_env: Res<OrganicEnergyEnvironment>,
+    settings: Res<SimulationSettings>,
+) {
+    // mn = LIGHTENERGY
+    // for each of 8 neighbors:
+    //     if neighbor is LEAF → return 0  // complete shading
+    //     if neighbor exists (any cell) → mn -= 1
+    // return OrganicMap[X][Y] * mn * LIGHTCOEF  // organic * (10 - obstructions) * 0.0008
+
+    let coeff = settings.config.environment.light_coef;
+    for (grid_pos, mut energy) in query.iter_mut() {
+        let mut light_energy = settings.config.environment.light_energy;
+
+        // TODO: Check neighbors and reduce light_energy accordingly
+        light_energy *= coeff;
+        light_energy *= organic_env.peek(grid_pos.x, grid_pos.y).unwrap_or(0.0);
+        energy.0 += light_energy;
+    }
 }

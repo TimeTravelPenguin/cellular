@@ -24,24 +24,30 @@ mod systems;
 
 pub use self::systems::*;
 
+#[derive(Component, Reflect, Default, Clone, Copy, Debug)]
+pub struct ProducerCell;
+
+#[derive(Component, Reflect, Default, Clone, Copy, Debug)]
+pub struct EnergyTransferCell;
+
 #[derive(Component, Reflect, Clone, Copy, Debug)]
 #[require(Cell::Sprout)]
 pub struct SproutCell;
 
 #[derive(Component, Reflect, Clone, Copy, Debug)]
-#[require(Cell::Leaf)]
+#[require(Cell::Leaf, ProducerCell, EnergyTransferCell)]
 pub struct LeafCell;
 
 #[derive(Component, Reflect, Clone, Copy, Debug)]
-#[require(Cell::Antenna)]
+#[require(Cell::Antenna, ProducerCell, EnergyTransferCell)]
 pub struct AntennaCell;
 
 #[derive(Component, Reflect, Clone, Copy, Debug)]
-#[require(Cell::Root)]
+#[require(Cell::Root, ProducerCell, EnergyTransferCell)]
 pub struct RootCell;
 
 #[derive(Component, Reflect, Clone, Copy, Debug)]
-#[require(Cell::Branch)]
+#[require(Cell::Branch, EnergyTransferCell)]
 pub struct BranchCell;
 
 #[derive(Component, Reflect, Clone, Copy, Debug)]
