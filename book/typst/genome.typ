@@ -117,6 +117,8 @@
   ..genome-sequence.flatten(),
 )
 
+#pagebreak()
+
 #let labels = (
   "Spawn Actions",
   "Condition 01",
@@ -158,6 +160,8 @@
     ))
     .flatten(),
 )
+
+#pagebreak()
 
 #stack(
   dir: ltr,
