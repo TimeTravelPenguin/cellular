@@ -3,6 +3,9 @@ use bevy::{
     prelude::{Deref, DerefMut},
     reflect::Reflect,
 };
+use itertools::Itertools;
+
+use crate::{GridPosition, cells::FacingDirection};
 
 mod systems;
 
@@ -27,44 +30,44 @@ pub enum Energy {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NeighbouringEnergy {
-    pub forward: u32,
-    pub left: u32,
-    pub right: u32,
-    pub center: u32,
-    pub total3x3: u32,
+    pub forward: f32,
+    pub left: f32,
+    pub right: f32,
+    pub center: f32,
+    pub total3x3: f32,
 }
 
-// impl NeighbouringEnergy {
-//     pub fn new(
-//         pos: &GridPosition,
-//         facing: &FacingDirection,
-//         energy_env: EnergyEnvironment,
-//     ) -> Self {
-//         let forward_pos = pos.offset(facing.0.delta());
-//         let left_pos = pos.offset(facing.left().delta());
-//         let right_pos = pos.offset(facing.right().delta());
-//
-//         let forward = energy_env.peek(forward_pos.x, forward_pos.y).unwrap_or(0);
-//         let left = energy_env.peek(left_pos.x, left_pos.y).unwrap_or(0);
-//         let right = energy_env.peek(right_pos.x, right_pos.y).unwrap_or(0);
-//         let center = energy_env.peek(pos.x, pos.y).unwrap_or(0);
-//
-//         let tiles3x3 = (-1..=1).cartesian_product(-1..=1).map(|(dx, dy)| {
-//             let neighbour_pos = pos.offset((dx, dy));
-//             energy_env
-//                 .peek(neighbour_pos.x, neighbour_pos.y)
-//                 .unwrap_or(0)
-//         });
-//
-//         NeighbouringEnergy {
-//             forward,
-//             left,
-//             right,
-//             center,
-//             total3x3: tiles3x3.sum(),
-//         }
-//     }
-// }
+impl NeighbouringEnergy {
+    pub fn new(
+        pos: &GridPosition,
+        facing: &FacingDirection,
+        energy_env: &EnergyEnvironment,
+    ) -> Self {
+        let forward_pos = pos.offset(facing.0.delta());
+        let left_pos = pos.offset(facing.left().delta());
+        let right_pos = pos.offset(facing.right().delta());
+
+        let forward = energy_env.peek(forward_pos.x, forward_pos.y).unwrap_or(0.0);
+        let left = energy_env.peek(left_pos.x, left_pos.y).unwrap_or(0.0);
+        let right = energy_env.peek(right_pos.x, right_pos.y).unwrap_or(0.0);
+        let center = energy_env.peek(pos.x, pos.y).unwrap_or(0.0);
+
+        let tiles3x3 = (-1..=1).cartesian_product(-1..=1).map(|(dx, dy)| {
+            let neighbour_pos = pos.offset((dx, dy));
+            energy_env
+                .peek(neighbour_pos.x, neighbour_pos.y)
+                .unwrap_or(0.0)
+        });
+
+        NeighbouringEnergy {
+            forward,
+            left,
+            right,
+            center,
+            total3x3: tiles3x3.sum(),
+        }
+    }
+}
 
 #[derive(Resource, Reflect, Clone, Debug, Deref, DerefMut)]
 pub struct OrganicEnergyEnvironment(pub EnergyEnvironment);
