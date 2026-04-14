@@ -110,8 +110,11 @@ fn draw_new_cells_system(
         .observe(observe_cell_out);
 }
 
-pub fn leaf_cell_produce_energy_system(
-    mut query: Query<(&GridPosition, &mut CellEnergy), With<LeafCell>>,
+pub fn leaf_cell_collect_energy_system(
+    mut query: Query<
+        (&GridPosition, &mut CellEnergy),
+        (With<LeafCell>, Without<RootCell>, Without<AntennaCell>),
+    >,
     organic_env: Res<OrganicEnergyEnvironment>,
     settings: Res<SimulationSettings>,
 ) {
@@ -129,5 +132,41 @@ pub fn leaf_cell_produce_energy_system(
         light_energy *= coeff;
         light_energy *= organic_env.peek(grid_pos.x, grid_pos.y).unwrap_or(0.0);
         energy.0 += light_energy;
+    }
+}
+
+pub fn root_cell_collect_energy_system(
+    mut query: Query<
+        (&GridPosition, &mut CellEnergy),
+        (With<RootCell>, Without<AntennaCell>, Without<LeafCell>),
+    >,
+    mut organic_env: ResMut<OrganicEnergyEnvironment>,
+    settings: Res<SimulationSettings>,
+) {
+    for (grid_pos, mut energy) in query.iter_mut() {
+        let energy_rate = settings.config.extraction_rates.root_extract_rate;
+        let env_energy = organic_env
+            .take(grid_pos.x, grid_pos.y, energy_rate)
+            .unwrap_or(0.0);
+
+        energy.0 += env_energy;
+    }
+}
+
+pub fn antenna_cell_collect_energy_system(
+    mut query: Query<
+        (&GridPosition, &mut CellEnergy),
+        (With<AntennaCell>, Without<RootCell>, Without<LeafCell>),
+    >,
+    mut charge_env: ResMut<ChargeEnergyEnvironment>,
+    settings: Res<SimulationSettings>,
+) {
+    for (grid_pos, mut energy) in query.iter_mut() {
+        let energy_rate = settings.config.extraction_rates.antenna_extract_rate;
+        let env_energy = charge_env
+            .take(grid_pos.x, grid_pos.y, energy_rate)
+            .unwrap_or(0.0);
+
+        energy.0 += env_energy;
     }
 }
