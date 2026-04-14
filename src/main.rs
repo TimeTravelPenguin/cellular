@@ -18,7 +18,7 @@ use rand::RngExt;
 
 use crate::{
     cells::{
-        Cell, CellInfo, CellPlugin, Direction, FacingDirection, NewCellEvent, SproutCell,
+        Cell, CellInfo, CellPlugin, FacingDirection, NewCellEvent, SproutCell,
         UpdateCellInfoMessage,
     },
     cli::{Cli, Command},

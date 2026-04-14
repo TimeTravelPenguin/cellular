@@ -1,29 +1,19 @@
-use std::collections::HashSet;
-
 use bevy::{
-    app::{App, Plugin, Update},
-    ecs::{message::MessageReader, observer::On, system::Res},
+    app::{App, Plugin},
+    ecs::{observer::On, system::Res},
     prelude::{
-        Assets, ColorMaterial, Commands, Entity, EntityCommands, Mesh, MeshMaterial2d, Quat, Query,
-        ResMut, Single, Transform, Vec3, With, Without, default, info,
+        Assets, ColorMaterial, Commands, EntityCommands, Mesh, MeshMaterial2d, Quat, Query, ResMut,
+        Transform, With, Without, default, info,
     },
 };
-use bevy_rand::{global::GlobalRng, prelude::WyRand};
-use rand::RngExt;
 
 use crate::{
-    GridPosition, SimulationSettings, TILE_SIZE,
+    GridPosition, SimulationSettings,
     cells::{
-        Cell, CellEnergy, CellRenderBundle, CellVisualSpec, Direction, FacingDirection, LeafCell,
-        Mesh2d, NewCellEvent,
+        AntennaCell, CellEnergy, CellRenderBundle, CellVisualSpec, Direction, LeafCell,
+        NewCellEvent, RootCell,
     },
-    energy::{
-        ChargeEnergyEnvironment, EnergyEnvironmentTrait, NeighbouringEnergy,
-        OrganicEnergyEnvironment,
-    },
-    genes::{
-        Genome, GenomeID, MultiCellCommand, ObstacleInfo, PreconditionParameters, SingleCellCommand,
-    },
+    energy::{ChargeEnergyEnvironment, EnergyEnvironmentTrait, OrganicEnergyEnvironment},
     input::{observe_cell_hover, observe_cell_out},
     utils::grid_pos_to_world_pos,
 };

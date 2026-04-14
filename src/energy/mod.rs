@@ -1,21 +1,10 @@
 use bevy::{
-    ecs::{
-        component::Component,
-        query::With,
-        resource::Resource,
-        system::{Query, ResMut},
-    },
+    ecs::{component::Component, resource::Resource},
     prelude::{Deref, DerefMut},
     reflect::Reflect,
 };
-use itertools::Itertools;
-use log::info;
 
 mod systems;
-
-use crate::{GridPosition, cells::FacingDirection};
-
-pub use self::systems::*;
 
 pub const ORGANIC_TOXICICITY_LEVEL: u32 = 100;
 pub const CHARGE_TOXICITY_LEVEL: u32 = 90;
