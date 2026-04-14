@@ -54,6 +54,9 @@ pub struct BranchCell;
 #[require(Cell::Seed)]
 pub struct SeedCell;
 
+#[derive(Component, Reflect, Clone, Copy, Debug)]
+pub struct EnergyTransferer;
+
 #[derive(EntityEvent, Debug, Clone)]
 pub struct NewCellEvent {
     pub entity: Entity,
@@ -288,4 +291,11 @@ pub struct CellInfo {
     pub energy: &'static CellEnergy,
     pub facing: &'static FacingDirection,
     pub genome_id: &'static GenomeID,
+}
+
+#[derive(Message, Clone, Debug)]
+pub struct CellEnergyTransferMessage {
+    pub from: Entity,
+    pub to: Entity,
+    pub amount: f32,
 }
