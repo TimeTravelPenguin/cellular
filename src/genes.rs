@@ -61,19 +61,26 @@ impl Distribution<RelativeDirection> for StandardUniform {
 /// as the organism grows.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenomeSpawn {
-    pub forward_cell_spawn: Cell,
-    pub right_cell_spawn: Cell,
-    pub left_cell_spawn: Cell,
+    pub forward_cell_spawn: Option<Cell>,
+    pub right_cell_spawn: Option<Cell>,
+    pub left_cell_spawn: Option<Cell>,
 }
 
 #[inline]
-fn random_spawnable_cell_type<R: Rng + ?Sized>(rng: &mut R) -> Cell {
-    match rng.random_range(0..5) {
-        0 => Cell::Leaf,
-        1 => Cell::Root,
-        2 => Cell::Sprout,
-        3 => Cell::Antenna,
-        _ => Cell::Seed,
+fn random_spawnable_cell_type<R: Rng + ?Sized>(rng: &mut R) -> Option<Cell> {
+    // Original spawn rates:
+    // 0..=63 => Sprout
+    // 64..=75 => Leaf
+    // 76..=85 => Antenna
+    // 86..=95 => Root
+    // 96..=255 => None
+    let roll = rng.random_range(0..=255);
+    match roll {
+        0..=63 => Some(Cell::Sprout),
+        64..=75 => Some(Cell::Leaf),
+        76..=85 => Some(Cell::Antenna),
+        86..=95 => Some(Cell::Root),
+        _ => None,
     }
 }
 
@@ -105,7 +112,7 @@ pub struct PreconditionParameters {
 
 /// Preconditions that are checked before executing a genome command. If the precondition is not met,
 /// the genome specified in `GenomeConditional::fail_next_genome` will be executed instead.
-#[derive(Component, EnumCount, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Component, EnumCount, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum GenomePrecondition {
     CellEnergyHasIncreased,
     SoilEnergyGreaterThanSoilOrganicMatter,
@@ -115,8 +122,8 @@ pub enum GenomePrecondition {
         less_direction: RelativeDirection,
         more_direction: RelativeDirection,
     },
-    SoilOrganicMatterMinimumRequirement(u32),
-    SoilOrganicMatterMinimumRequirement3x3(u32),
+    SoilOrganicMatterMinimumRequirement(f32),
+    SoilOrganicMatterMinimumRequirement3x3(f32),
     RngToBeat(u8),
 }
 
@@ -182,11 +189,11 @@ impl Distribution<GenomePrecondition> for StandardUniform {
                 less_direction: rng.random(),
                 more_direction: rng.random(),
             },
-            5 => {
-                GenomePrecondition::SoilOrganicMatterMinimumRequirement(2 * rng.random_range(0..10))
-            }
+            5 => GenomePrecondition::SoilOrganicMatterMinimumRequirement(
+                (2 * rng.random_range(0..10)) as f32,
+            ),
             6 => GenomePrecondition::SoilOrganicMatterMinimumRequirement3x3(
-                18 * rng.random_range(0..10),
+                (18 * rng.random_range(0..10)) as f32,
             ),
             _ => GenomePrecondition::RngToBeat(rng.random_range(1..u8::MAX)),
         }
@@ -306,7 +313,7 @@ impl Distribution<CellAction> for StandardUniform {
 
 /// A conditional genome command that checks a precondition and executes either
 /// the main command or a fallback genome.
-#[derive(Component, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Component, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GenomeConditional {
     pub preconditions: Vec<GenomePrecondition>,
     pub preconditions_met_action: CellAction,
@@ -326,7 +333,7 @@ impl Distribution<GenomeConditional> for StandardUniform {
 }
 
 /// The genome of a cell, consisting of spawn information and a set of conditional commands.
-#[derive(Component, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Component, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GenomeEntry {
     pub spawn: GenomeSpawn,
     pub conditionals: GenomeConditional,
