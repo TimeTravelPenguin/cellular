@@ -39,9 +39,9 @@ The genome controls how sprout and seed cells behave.
   predicates are true, then a command block is executed (there are separate blocks for
   sprouts and seeds). Similarly, if either yield false, there is a command block that
   executes in that case.
-- Commands perform an action (hence there are separate blocks for sprouts and seeds).
-  Depending on whether the command is not present, whether it cannot be completed, or if
-  it completed successfully, a next active gene is set.
+- Commands perform an action (hence there are separate blocks for sprouts and
+  lone/disconnected sprouts). Depending on whether the command is not present, whether it
+  cannot be completed, or if it completed successfully, a next active gene is set.
 - The active gene is simply the index of a gene in the full genome.
 
 Together, these features control the expressiveness of the system. Below is a
