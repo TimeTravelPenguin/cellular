@@ -9,10 +9,8 @@ inspiring project was originally implemented in the [Processing] software,
 using Java. This version takes a more complex approach, using the [Bevy] game
 engine, in Rust.
 
-The goal of this project is twofold:
-
-1. Learn about the basics of genetic cellular automata, and
-2. Implement an efficient solution using Bevy.
+The goal of this project is is to learn more about Bevy and how it can aid in the
+development of Simulations.
 
 Since Bevy provides powerful parallelism and an entity-component system (ECS),
 it should, in theory, be much more flexible to implement such (fast)
