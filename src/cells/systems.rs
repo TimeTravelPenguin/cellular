@@ -21,15 +21,13 @@ use crate::{
     GridPosition, SimulationSettings,
     cells::{
         AntennaCell, Cell, CellEnergy, CellEnergyTransferMessage, CellRelation, CellRenderBundle,
-        CellVisualSpec, Direction, FacingDirection, LeafCell, NewCellEvent, RootCell, SeedCell,
+        CellVisualSpec, Direction, FacingDirection, LeafCell, NewCellEvent, RootCell,
     },
     energy::{
         ChargeEnergyEnvironment, EnergyEnvironmentTrait, NeighbouringEnergy,
         OrganicEnergyEnvironment,
     },
-    genes::{
-        Genome, GenomeID, MultiCellCommand, ObstacleInfo, PreconditionParameters, SingleCellCommand,
-    },
+    genes::{Genome, GenomeID, ObstacleInfo, PreconditionParameters},
     input::{observe_cell_hover, observe_cell_out},
     utils::grid_pos_to_world_pos,
 };
@@ -261,7 +259,7 @@ pub fn cell_receive_energy_system(
 }
 
 pub fn execute_genome_system(
-    commands: Commands,
+    _commands: Commands,
     mut rng: Single<&mut WyRand, With<GlobalRng>>,
     cell_positions: Query<&GridPosition, With<Cell>>,
     mut cells: Query<(
@@ -275,7 +273,7 @@ pub fn execute_genome_system(
     charge_energy_env: Res<ChargeEnergyEnvironment>,
 ) {
     let cell_positions: HashSet<GridPosition> = cell_positions.iter().cloned().collect();
-    for (grid_pos, facing_dir, mut cell, genome, mut genome_id) in cells.iter_mut() {
+    for (grid_pos, facing_dir, _cell, _genome, _genome_id) in cells.iter_mut() {
         let organic_energy = NeighbouringEnergy::new(grid_pos, facing_dir, &organic_energy_env);
         let charge_energy = NeighbouringEnergy::new(grid_pos, facing_dir, &charge_energy_env);
 
@@ -285,7 +283,7 @@ pub fn execute_genome_system(
             right: cell_positions.contains(&grid_pos.offset(facing_dir.right().delta())),
         };
 
-        let precondition = PreconditionParameters {
+        let _precondition = PreconditionParameters {
             organic_energy,
             charge_energy,
             obstacles,
@@ -293,52 +291,53 @@ pub fn execute_genome_system(
             rng_value: rng.random(),
         };
 
-        let action = genome.execute(&mut genome_id, &precondition);
-
-        match *cell {
-            Cell::Sprout => match action.multi_cell_command {
-                MultiCellCommand::SkipTurn => {
-                    *genome_id = action.multi_cell_success_next_genome;
-                }
-                MultiCellCommand::BecomeASeed => {
-                    *genome_id = action.multi_cell_success_next_genome;
-                    *cell = Cell::Seed;
-                }
-                MultiCellCommand::BecomeADetachedSeed { is_stationary } => {
-                    *genome_id = action.multi_cell_success_next_genome;
-                    *cell = Cell::Seed;
-                }
-                MultiCellCommand::Die => todo!(),
-                MultiCellCommand::SeparateFromOrganism => todo!(),
-                MultiCellCommand::TransportSoilEnergy(relative_direction) => todo!(),
-                MultiCellCommand::TransportSoilOrganicMatter(relative_direction) => {
-                    todo!()
-                }
-                MultiCellCommand::ShootSeed { high_energy } => todo!(),
-                MultiCellCommand::DistributeEnergyAsOrganicMatter => todo!(),
-            },
-            Cell::Seed => match action.single_cell_command {
-                SingleCellCommand::MoveForward => todo!(),
-                SingleCellCommand::TurnLeft => todo!(),
-                SingleCellCommand::TurnRight => todo!(),
-                SingleCellCommand::TurnAround => todo!(),
-                SingleCellCommand::TurnLeftAndMove => todo!(),
-                SingleCellCommand::TurnRightAndMove => todo!(),
-                SingleCellCommand::TurnAroundAndMove => todo!(),
-                SingleCellCommand::TurnRandom => todo!(),
-                SingleCellCommand::MoveRandom => todo!(),
-                SingleCellCommand::Parasitise => todo!(),
-                SingleCellCommand::PullOrganicFromLeft => todo!(),
-                SingleCellCommand::PullOrganicFromRight => todo!(),
-                SingleCellCommand::PullOrganicFromForward => todo!(),
-                SingleCellCommand::PullChargeFromLeft => todo!(),
-                SingleCellCommand::PullChargeFromRight => todo!(),
-                SingleCellCommand::PullChargeFromForward => todo!(),
-                SingleCellCommand::ConsumeNeighbours => todo!(),
-                SingleCellCommand::TakeEnergyFromSoil => todo!(),
-            },
-            _ => unreachable!("Only Sprout and Seed cells should have genomes"),
-        }
+        todo!();
+        //     let action = genome.execute(&mut genome_id, &precondition);
+        //
+        //     match *cell {
+        //         Cell::Sprout => match action.multi_cell_command {
+        //             MultiCellCommand::SkipTurn => {
+        //                 *genome_id = action.multi_cell_success_next_genome;
+        //             }
+        //             MultiCellCommand::BecomeASeed => {
+        //                 *genome_id = action.multi_cell_success_next_genome;
+        //                 *cell = Cell::Seed;
+        //             }
+        //             MultiCellCommand::BecomeADetachedSeed { is_stationary: _ } => {
+        //                 *genome_id = action.multi_cell_success_next_genome;
+        //                 *cell = Cell::Seed;
+        //             }
+        //             MultiCellCommand::Die => todo!(),
+        //             MultiCellCommand::SeparateFromOrganism => todo!(),
+        //             MultiCellCommand::TransportSoilEnergy(_relative_direction) => todo!(),
+        //             MultiCellCommand::TransportSoilOrganicMatter(_relative_direction) => {
+        //                 todo!()
+        //             }
+        //             MultiCellCommand::ShootSeed { high_energy: _ } => todo!(),
+        //             MultiCellCommand::DistributeEnergyAsOrganicMatter => todo!(),
+        //         },
+        //         Cell::Seed => match action.single_cell_command {
+        //             SingleCellCommand::MoveForward => todo!(),
+        //             SingleCellCommand::TurnLeft => todo!(),
+        //             SingleCellCommand::TurnRight => todo!(),
+        //             SingleCellCommand::TurnAround => todo!(),
+        //             SingleCellCommand::TurnLeftAndMove => todo!(),
+        //             SingleCellCommand::TurnRightAndMove => todo!(),
+        //             SingleCellCommand::TurnAroundAndMove => todo!(),
+        //             SingleCellCommand::TurnRandom => todo!(),
+        //             SingleCellCommand::MoveRandom => todo!(),
+        //             SingleCellCommand::Parasitise => todo!(),
+        //             SingleCellCommand::PullOrganicFromLeft => todo!(),
+        //             SingleCellCommand::PullOrganicFromRight => todo!(),
+        //             SingleCellCommand::PullOrganicFromForward => todo!(),
+        //             SingleCellCommand::PullChargeFromLeft => todo!(),
+        //             SingleCellCommand::PullChargeFromRight => todo!(),
+        //             SingleCellCommand::PullChargeFromForward => todo!(),
+        //             SingleCellCommand::ConsumeNeighbours => todo!(),
+        //             SingleCellCommand::TakeEnergyFromSoil => todo!(),
+        //         },
+        //         _ => unreachable!("Only Sprout and Seed cells should have genomes"),
+        //     }
     }
 }
 

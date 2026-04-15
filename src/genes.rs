@@ -505,42 +505,16 @@ impl Distribution<SingleCellCommand> for StandardUniform {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CellGenomeCommand {
-    // Multi Cell
-    pub multi_cell_command: MultiCellCommand,
-    pub multi_cell_success_next_genome: GenomeID,
-    pub multi_cell_fail_next_genome: GenomeID,
-    // Single Cell
-    pub single_cell_command: SingleCellCommand,
-    pub single_cell_success_next_genome: GenomeID,
-    pub single_cell_fail_next_genome: GenomeID,
+pub struct GenomeCommandResult {
+    pub success_next_genome: GenomeID,
+    pub fail_next_genome: GenomeID,
 }
 
-impl Distribution<CellGenomeCommand> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> CellGenomeCommand {
-        CellGenomeCommand {
-            multi_cell_command: rng.random(),
-            multi_cell_success_next_genome: rng.random(),
-            multi_cell_fail_next_genome: rng.random(),
-            single_cell_command: rng.random(),
-            single_cell_success_next_genome: rng.random(),
-            single_cell_fail_next_genome: rng.random(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CellAction {
-    Command(CellGenomeCommand),
-    ChangeGenome(GenomeID),
-}
-
-impl Distribution<CellAction> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> CellAction {
-        if rng.random_bool(GENOME_COMMAND_PROBABILITY) {
-            CellAction::Command(rng.random())
-        } else {
-            CellAction::ChangeGenome(rng.random())
+impl Distribution<GenomeCommandResult> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GenomeCommandResult {
+        GenomeCommandResult {
+            success_next_genome: rng.random(),
+            fail_next_genome: rng.random(),
         }
     }
 }
@@ -550,18 +524,40 @@ impl Distribution<CellAction> for StandardUniform {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GenomeConditional {
     pub preconditions: Vec<GenomePrecondition>,
-    pub preconditions_met_action: CellAction,
-    pub preconditions_unmet_action: CellAction,
-    pub fallback_genome: GenomeID,
+    pub preconditions_met_multicell_command: Option<MultiCellCommand>,
+    pub preconditions_unmet_multicell_command: Option<MultiCellCommand>,
+    pub preconditions_met_singlecell_command: Option<SingleCellCommand>,
+    pub preconditions_unmet_singlecell_command: Option<SingleCellCommand>,
+    pub preconditions_met_fallback_genome: GenomeID,
+    pub preconditions_unmet_fallback_genome: GenomeID,
 }
 
 impl Distribution<GenomeConditional> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GenomeConditional {
+        let [
+            preconditions_met_multicell_command,
+            preconditions_unmet_multicell_command,
+        ] = std::array::from_fn(|_| {
+            rng.random_bool(GENOME_COMMAND_PROBABILITY)
+                .then(|| rng.random())
+        });
+
+        let [
+            preconditions_met_singlecell_command,
+            preconditions_unmet_singlecell_command,
+        ] = std::array::from_fn(|_| {
+            rng.random_bool(GENOME_COMMAND_PROBABILITY)
+                .then(|| rng.random())
+        });
+
         GenomeConditional {
             preconditions: (0..rng.random_range(0..2)).map(|_| rng.random()).collect(),
-            preconditions_met_action: rng.random(),
-            preconditions_unmet_action: rng.random(),
-            fallback_genome: rng.random(),
+            preconditions_met_multicell_command,
+            preconditions_unmet_multicell_command,
+            preconditions_met_singlecell_command,
+            preconditions_unmet_singlecell_command,
+            preconditions_met_fallback_genome: rng.random(),
+            preconditions_unmet_fallback_genome: rng.random(),
         }
     }
 }
@@ -594,18 +590,11 @@ impl Genome {
         &self.genomes[genome_id.0]
     }
 
-    pub fn execute(
-        &self,
-        genome_id: &mut GenomeID,
-        precondition_params: &PreconditionParameters,
-    ) -> CellGenomeCommand {
+    pub fn execute(&self, genome_id: &mut GenomeID, precondition_params: &PreconditionParameters) {
         let gene = self.get_entry(*genome_id);
 
         if gene.conditionals.preconditions.is_empty() {
-            let next_genome_id = gene.conditionals.fallback_genome;
-            *genome_id = next_genome_id;
-
-            return self.execute(genome_id, precondition_params);
+            todo!("Spawn cells")
         }
 
         let all_preconditions_met = gene
@@ -614,19 +603,17 @@ impl Genome {
             .iter()
             .all(|precondition| precondition.check(precondition_params));
 
-        let action = if all_preconditions_met {
-            gene.conditionals.preconditions_met_action
-        } else {
-            gene.conditionals.preconditions_unmet_action
-        };
+        let _action = if all_preconditions_met {
+            let _multi_command = gene.conditionals.preconditions_met_multicell_command;
+            let _single_command = gene.conditionals.preconditions_met_singlecell_command;
 
-        match action {
-            CellAction::ChangeGenome(new_genome_id) => {
-                *genome_id = new_genome_id;
-                self.execute(genome_id, precondition_params)
-            }
-            CellAction::Command(command) => command,
-        }
+            todo!("Handle multi_command or single_command execution and determine next genome")
+        } else {
+            let _multi_command = gene.conditionals.preconditions_unmet_multicell_command;
+            let _single_command = gene.conditionals.preconditions_unmet_singlecell_command;
+
+            todo!("Handle multi_command or single_command execution and determine next genome")
+        };
     }
 }
 
