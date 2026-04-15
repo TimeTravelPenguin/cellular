@@ -5,7 +5,7 @@ use rand::seq::IndexedRandom;
 use rand::{Rng, RngExt};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use strum::{EnumCount, VariantArray};
+use strum::{EnumDiscriminants, VariantArray};
 use thiserror::Error;
 
 use crate::cells::Cell;
@@ -59,7 +59,7 @@ impl Distribution<RelativeDirection> for StandardUniform {
 
 /// Cell spawn information determining the types of cells that will be spawned
 /// as the organism grows.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenomeSpawn {
     pub forward_cell_spawn: Option<Cell>,
     pub right_cell_spawn: Option<Cell>,
@@ -110,98 +110,330 @@ pub struct PreconditionParameters {
     pub rng_value: u8,
 }
 
+#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[strum_discriminants(derive(VariantArray))]
+pub enum CurrentLocationResourceCondition {
+    OrganicAtPositionLessThanThreshold(f32),
+    OrganicAtPositionExceedsThreshold(f32),
+    ChargeAtPositionLessThanThreshold(f32),
+    ChargeAtPositionExceedsThreshold(f32),
+}
+
+impl Distribution<CurrentLocationResourceCondition> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> CurrentLocationResourceCondition {
+        use CurrentLocationResourceConditionDiscriminants as D;
+
+        let variant = D::VARIANTS
+            .choose(rng)
+            .expect("CurrentLocationResourceCondition variants should not be empty");
+
+        match variant {
+            D::OrganicAtPositionLessThanThreshold => {
+                CurrentLocationResourceCondition::OrganicAtPositionLessThanThreshold(rng.random())
+            }
+            D::OrganicAtPositionExceedsThreshold => {
+                CurrentLocationResourceCondition::OrganicAtPositionExceedsThreshold(rng.random())
+            }
+            D::ChargeAtPositionLessThanThreshold => {
+                CurrentLocationResourceCondition::ChargeAtPositionLessThanThreshold(rng.random())
+            }
+            D::ChargeAtPositionExceedsThreshold => {
+                CurrentLocationResourceCondition::ChargeAtPositionExceedsThreshold(rng.random())
+            }
+        }
+    }
+}
+
+#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[strum_discriminants(derive(VariantArray))]
+pub enum OrganismDepthCondition {
+    DepthIsEven,
+    DepthIsOdd,
+    DepthGreaterThan(usize),
+    DepthLessThan(usize),
+}
+
+impl Distribution<OrganismDepthCondition> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> OrganismDepthCondition {
+        use OrganismDepthConditionDiscriminants as D;
+
+        let variant = D::VARIANTS
+            .choose(rng)
+            .expect("OrganismDepthCondition variants should not be empty");
+
+        match variant {
+            D::DepthIsEven => OrganismDepthCondition::DepthIsEven,
+            D::DepthIsOdd => OrganismDepthCondition::DepthIsOdd,
+            D::DepthGreaterThan => {
+                OrganismDepthCondition::DepthGreaterThan(rng.random_range(0..10))
+            }
+            D::DepthLessThan => OrganismDepthCondition::DepthLessThan(rng.random_range(0..10)),
+        }
+    }
+}
+
+#[derive(VariantArray, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CellEnergyComparison {
+    HasIncreased,
+    HasDecreased,
+}
+
+impl Distribution<CellEnergyComparison> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> CellEnergyComparison {
+        *CellEnergyComparison::VARIANTS
+            .choose(rng)
+            .expect("CellEnergyComparison variants should not be empty")
+    }
+}
+
+#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[strum_discriminants(derive(VariantArray))]
+pub enum SoilEnergyAreaComparison {
+    Organic3x3GreaterThanThreshold(f32),
+    Organic3x3LessThanThreshold(f32),
+    Charge3x3GreaterThanThreshold(f32),
+    Charge3x3LessThanThreshold(f32),
+    Organic3x3GreaterThanCharge3x3,
+    Organic3x3LessThanCharge3x3,
+}
+
+impl Distribution<SoilEnergyAreaComparison> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> SoilEnergyAreaComparison {
+        use SoilEnergyAreaComparisonDiscriminants as D;
+
+        let variant = D::VARIANTS
+            .choose(rng)
+            .expect("SoilEnergyAreaComparison variants should not be empty");
+
+        match variant {
+            D::Organic3x3GreaterThanThreshold => {
+                SoilEnergyAreaComparison::Organic3x3GreaterThanThreshold(rng.random())
+            }
+            D::Organic3x3LessThanThreshold => {
+                SoilEnergyAreaComparison::Organic3x3LessThanThreshold(rng.random())
+            }
+            D::Charge3x3GreaterThanThreshold => {
+                SoilEnergyAreaComparison::Charge3x3GreaterThanThreshold(rng.random())
+            }
+            D::Charge3x3LessThanThreshold => {
+                SoilEnergyAreaComparison::Charge3x3LessThanThreshold(rng.random())
+            }
+            D::Organic3x3GreaterThanCharge3x3 => {
+                SoilEnergyAreaComparison::Organic3x3GreaterThanCharge3x3
+            }
+            D::Organic3x3LessThanCharge3x3 => SoilEnergyAreaComparison::Organic3x3LessThanCharge3x3,
+        }
+    }
+}
+
+#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[strum_discriminants(derive(VariantArray))]
+pub enum SpatialAwarenessCondition {
+    NearbyEdibleCells,
+    Empty3Neighbourhood,
+    EmptyRelativeDirection(RelativeDirection),
+    ObstacleInDirection(RelativeDirection),
+    HasParent,
+}
+
+impl Distribution<SpatialAwarenessCondition> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> SpatialAwarenessCondition {
+        use SpatialAwarenessConditionDiscriminants as D;
+
+        let variant = D::VARIANTS
+            .choose(rng)
+            .expect("SpatialAwarenessCondition variants should not be empty");
+
+        match variant {
+            D::NearbyEdibleCells => SpatialAwarenessCondition::NearbyEdibleCells,
+            D::Empty3Neighbourhood => SpatialAwarenessCondition::Empty3Neighbourhood,
+            D::EmptyRelativeDirection => {
+                SpatialAwarenessCondition::EmptyRelativeDirection(rng.random())
+            }
+            D::ObstacleInDirection => SpatialAwarenessCondition::ObstacleInDirection(rng.random()),
+            D::HasParent => SpatialAwarenessCondition::HasParent,
+        }
+    }
+}
+
+#[derive(VariantArray, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum DirectionComparison {
+    CenterGreaterThanLeft,
+    CenterGreaterThanRight,
+    LeftGreaterThanCenter,
+    LeftGreaterThanRight,
+    RightGreaterThanCenter,
+    RightGreaterThanLeft,
+}
+
+impl Distribution<DirectionComparison> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> DirectionComparison {
+        *DirectionComparison::VARIANTS
+            .choose(rng)
+            .expect("DirectionComparison variants should not be empty")
+    }
+}
+
+#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[strum_discriminants(derive(VariantArray))]
+pub enum OrganicEnergyComparison {
+    DirectionComparison(DirectionComparison),
+    DirectionGreaterThanThreshold(RelativeDirection, f32),
+}
+
+impl Distribution<OrganicEnergyComparison> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> OrganicEnergyComparison {
+        use OrganicEnergyComparisonDiscriminants as D;
+
+        let variant = D::VARIANTS
+            .choose(rng)
+            .expect("OrganicEnergyComparison variants should not be empty");
+
+        match variant {
+            D::DirectionComparison => OrganicEnergyComparison::DirectionComparison(rng.random()),
+            D::DirectionGreaterThanThreshold => {
+                OrganicEnergyComparison::DirectionGreaterThanThreshold(
+                    rng.random(),
+                    rng.random_range(0.0..10.0),
+                )
+            }
+        }
+    }
+}
+
+#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[strum_discriminants(derive(VariantArray))]
+pub enum ChargeEnergyComparison {
+    DirectionComparison(DirectionComparison),
+    DirectionGreaterThanThreshold(RelativeDirection, f32),
+}
+
+impl Distribution<ChargeEnergyComparison> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> ChargeEnergyComparison {
+        use ChargeEnergyComparisonDiscriminants as D;
+
+        let variant = D::VARIANTS
+            .choose(rng)
+            .expect("ChargeEnergyComparison variants should not be empty");
+
+        match variant {
+            D::DirectionComparison => ChargeEnergyComparison::DirectionComparison(rng.random()),
+            D::DirectionGreaterThanThreshold => {
+                ChargeEnergyComparison::DirectionGreaterThanThreshold(
+                    rng.random(),
+                    rng.random_range(0.0..10.0),
+                )
+            }
+        }
+    }
+}
+
+#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[strum_discriminants(derive(VariantArray))]
+pub enum FreeSpaceComparison {
+    DirectionComparison(DirectionComparison),
+    DirectionGreaterThanThreshold(RelativeDirection, usize),
+}
+
+impl Distribution<FreeSpaceComparison> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> FreeSpaceComparison {
+        use FreeSpaceComparisonDiscriminants as D;
+
+        let variant = D::VARIANTS
+            .choose(rng)
+            .expect("FreeSpaceComparison variants should not be empty");
+
+        match variant {
+            D::DirectionComparison => FreeSpaceComparison::DirectionComparison(rng.random()),
+            D::DirectionGreaterThanThreshold => FreeSpaceComparison::DirectionGreaterThanThreshold(
+                rng.random(),
+                rng.random_range(0..10),
+            ),
+        }
+    }
+}
+
+#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[strum_discriminants(derive(VariantArray))]
+pub enum PoisonDetection {
+    Organic(RelativeDirection),
+    Charge(RelativeDirection),
+    Any(RelativeDirection),
+}
+
+impl Distribution<PoisonDetection> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PoisonDetection {
+        use PoisonDetectionDiscriminants as D;
+
+        let variant = D::VARIANTS
+            .choose(rng)
+            .expect("PoisonDetection variants should not be empty");
+
+        match variant {
+            D::Organic => PoisonDetection::Organic(rng.random()),
+            D::Charge => PoisonDetection::Charge(rng.random()),
+            D::Any => PoisonDetection::Any(rng.random()),
+        }
+    }
+}
+
 /// Preconditions that are checked before executing a genome command. If the precondition is not met,
 /// the genome specified in `GenomeConditional::fail_next_genome` will be executed instead.
-#[derive(Component, EnumCount, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[strum_discriminants(derive(VariantArray))]
 pub enum GenomePrecondition {
-    CellEnergyHasIncreased,
-    SoilEnergyGreaterThanSoilOrganicMatter,
-    ObstacleInDirection(RelativeDirection),
-    NoObstacles,
-    OrganicMatterComparison {
-        less_direction: RelativeDirection,
-        more_direction: RelativeDirection,
-    },
-    SoilOrganicMatterMinimumRequirement(f32),
-    SoilOrganicMatterMinimumRequirement3x3(f32),
-    RngToBeat(u8),
+    CurrentLocationResourceCondition(CurrentLocationResourceCondition),
+    OrganismDepthCondition(OrganismDepthCondition),
+    CellEnergyComparison(CellEnergyComparison),
+    SoilEnergyAreaComparison(SoilEnergyAreaComparison),
+    SpatialAwarenessCondition(SpatialAwarenessCondition),
+    RandomGreaterThan(u8),
+    LightEnergyComparison(DirectionComparison),
+    OrganicEnergyComparison(OrganicEnergyComparison),
+    ChargeEnergyComparison(ChargeEnergyComparison),
+    FreeSpaceComparison(FreeSpaceComparison),
+    PoisonDetection(PoisonDetection),
 }
 
 impl GenomePrecondition {
-    pub fn check(&self, params: &PreconditionParameters) -> bool {
-        match self {
-            GenomePrecondition::CellEnergyHasIncreased => params.cell_energy_has_increased,
-            GenomePrecondition::SoilEnergyGreaterThanSoilOrganicMatter => {
-                params.charge_energy.center > params.organic_energy.center
-            }
-            GenomePrecondition::ObstacleInDirection(dir) => match dir {
-                RelativeDirection::Forward => params.obstacles.forward,
-                RelativeDirection::Left => params.obstacles.left,
-                RelativeDirection::Right => params.obstacles.right,
-            },
-            GenomePrecondition::NoObstacles => {
-                !params.obstacles.forward && !params.obstacles.left && !params.obstacles.right
-            }
-            GenomePrecondition::OrganicMatterComparison {
-                less_direction,
-                more_direction,
-            } => {
-                let less_value = match less_direction {
-                    RelativeDirection::Forward => params.organic_energy.forward,
-                    RelativeDirection::Left => params.organic_energy.left,
-                    RelativeDirection::Right => params.organic_energy.right,
-                };
-
-                let more_value = match more_direction {
-                    RelativeDirection::Forward => params.organic_energy.forward,
-                    RelativeDirection::Left => params.organic_energy.left,
-                    RelativeDirection::Right => params.organic_energy.right,
-                };
-
-                less_value < more_value
-            }
-            GenomePrecondition::SoilOrganicMatterMinimumRequirement(min) => {
-                params.organic_energy.center >= *min
-            }
-            GenomePrecondition::SoilOrganicMatterMinimumRequirement3x3(min) => {
-                params.organic_energy.total3x3 >= *min
-            }
-            GenomePrecondition::RngToBeat(threshold) => params.rng_value > *threshold,
-        }
+    pub fn check(&self, _params: &PreconditionParameters) -> bool {
+        todo!()
     }
 }
 
 impl Distribution<GenomePrecondition> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GenomePrecondition {
-        let total_preconditions = 8;
-        debug_assert_eq!(
-            GenomePrecondition::COUNT,
-            total_preconditions,
-            "GenomePrecondition variants should match the number of cases in the distribution"
-        );
+        use GenomePreconditionDiscriminants as D;
 
-        match rng.random_range(0..total_preconditions) {
-            0 => GenomePrecondition::CellEnergyHasIncreased,
-            1 => GenomePrecondition::SoilEnergyGreaterThanSoilOrganicMatter,
-            2 => GenomePrecondition::ObstacleInDirection(rng.random()),
-            3 => GenomePrecondition::NoObstacles,
-            4 => GenomePrecondition::OrganicMatterComparison {
-                less_direction: rng.random(),
-                more_direction: rng.random(),
-            },
-            5 => GenomePrecondition::SoilOrganicMatterMinimumRequirement(
-                (2 * rng.random_range(0..10)) as f32,
-            ),
-            6 => GenomePrecondition::SoilOrganicMatterMinimumRequirement3x3(
-                (18 * rng.random_range(0..10)) as f32,
-            ),
-            _ => GenomePrecondition::RngToBeat(rng.random_range(1..u8::MAX)),
+        let variant = D::VARIANTS
+            .choose(rng)
+            .expect("GenomePrecondition variants should not be empty");
+
+        match variant {
+            D::CurrentLocationResourceCondition => {
+                GenomePrecondition::CurrentLocationResourceCondition(rng.random())
+            }
+            D::OrganismDepthCondition => GenomePrecondition::OrganismDepthCondition(rng.random()),
+            D::CellEnergyComparison => GenomePrecondition::CellEnergyComparison(rng.random()),
+            D::SoilEnergyAreaComparison => {
+                GenomePrecondition::SoilEnergyAreaComparison(rng.random())
+            }
+            D::SpatialAwarenessCondition => {
+                GenomePrecondition::SpatialAwarenessCondition(rng.random())
+            }
+            D::RandomGreaterThan => GenomePrecondition::RandomGreaterThan(rng.random()),
+            D::LightEnergyComparison => GenomePrecondition::LightEnergyComparison(rng.random()),
+            D::OrganicEnergyComparison => GenomePrecondition::OrganicEnergyComparison(rng.random()),
+            D::ChargeEnergyComparison => GenomePrecondition::ChargeEnergyComparison(rng.random()),
+            D::FreeSpaceComparison => GenomePrecondition::FreeSpaceComparison(rng.random()),
+            D::PoisonDetection => GenomePrecondition::PoisonDetection(rng.random()),
         }
     }
 }
 
 /// Commands that a cell can execute based on its genome.
-#[derive(Component, EnumCount, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[strum_discriminants(derive(VariantArray))]
 pub enum MultiCellCommand {
     SkipTurn,
     BecomeASeed,
@@ -216,31 +448,33 @@ pub enum MultiCellCommand {
 
 impl Distribution<MultiCellCommand> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MultiCellCommand {
-        let total_commands = 9;
-        debug_assert_eq!(
-            MultiCellCommand::COUNT,
-            total_commands,
-            "MultiCellCommand variants should match the number of cases in the distribution"
-        );
+        use MultiCellCommandDiscriminants as D;
 
-        match rng.random_range(0..total_commands) {
-            0 => MultiCellCommand::SkipTurn,
-            1 => MultiCellCommand::BecomeASeed,
-            2 => MultiCellCommand::BecomeADetachedSeed {
-                is_stationary: rng.random(),
+        let variant = D::VARIANTS
+            .choose(rng)
+            .expect("MultiCellCommand variants should not be empty");
+
+        match variant {
+            D::SkipTurn => MultiCellCommand::SkipTurn,
+            D::BecomeASeed => MultiCellCommand::BecomeASeed,
+            D::BecomeADetachedSeed => MultiCellCommand::BecomeADetachedSeed {
+                is_stationary: rng.random_bool(0.5),
             },
-            3 => MultiCellCommand::Die,
-            4 => MultiCellCommand::SeparateFromOrganism,
-            5 => MultiCellCommand::TransportSoilEnergy(rng.random()),
-            6 => MultiCellCommand::TransportSoilOrganicMatter(rng.random()),
-            _ => MultiCellCommand::ShootSeed {
-                high_energy: rng.random(),
+            D::Die => MultiCellCommand::Die,
+            D::SeparateFromOrganism => MultiCellCommand::SeparateFromOrganism,
+            D::TransportSoilEnergy => MultiCellCommand::TransportSoilEnergy(rng.random()),
+            D::TransportSoilOrganicMatter => {
+                MultiCellCommand::TransportSoilOrganicMatter(rng.random())
+            }
+            D::ShootSeed => MultiCellCommand::ShootSeed {
+                high_energy: rng.random_bool(0.5),
             },
+            D::DistributeEnergyAsOrganicMatter => MultiCellCommand::DistributeEnergyAsOrganicMatter,
         }
     }
 }
 
-#[derive(Component, VariantArray, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(VariantArray, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SingleCellCommand {
     MoveForward,
     TurnLeft,
@@ -270,7 +504,7 @@ impl Distribution<SingleCellCommand> for StandardUniform {
     }
 }
 
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CellGenomeCommand {
     // Multi Cell
     pub multi_cell_command: MultiCellCommand,
@@ -295,7 +529,7 @@ impl Distribution<CellGenomeCommand> for StandardUniform {
     }
 }
 
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CellAction {
     Command(CellGenomeCommand),
     ChangeGenome(GenomeID),
@@ -313,7 +547,7 @@ impl Distribution<CellAction> for StandardUniform {
 
 /// A conditional genome command that checks a precondition and executes either
 /// the main command or a fallback genome.
-#[derive(Component, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GenomeConditional {
     pub preconditions: Vec<GenomePrecondition>,
     pub preconditions_met_action: CellAction,
@@ -333,7 +567,7 @@ impl Distribution<GenomeConditional> for StandardUniform {
 }
 
 /// The genome of a cell, consisting of spawn information and a set of conditional commands.
-#[derive(Component, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GenomeEntry {
     pub spawn: GenomeSpawn,
     pub conditionals: GenomeConditional,
@@ -351,7 +585,6 @@ impl Distribution<GenomeEntry> for StandardUniform {
 #[serde_as]
 #[derive(Component, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Genome {
-    clan: usize,
     #[serde_as(as = "[_; GENOME_SIZE]")]
     genomes: [GenomeEntry; GENOME_SIZE],
 }
@@ -399,11 +632,8 @@ impl Genome {
 
 impl Distribution<Genome> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Genome {
-        let genomes = std::array::from_fn(|_| rng.random());
-
         Genome {
-            genomes,
-            clan: rng.random_range(0..usize::MAX),
+            genomes: std::array::from_fn(|_| rng.random()),
         }
     }
 }
