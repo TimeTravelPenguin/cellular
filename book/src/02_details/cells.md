@@ -12,19 +12,19 @@ the organism.
 
 ### Sprout
 
-Sprouts are one of the two cell types whose behaviour is directly influenced by
-a genome. As the simulation progresses, the geneome undergoes random mutations.
-These mutations adjust the behaviour of cells.
+Sprouts are the only cell whose behaviour is directly influenced by a genome. As the
+simulation progresses, the geneome undergoes random mutations. These mutations adjust the
+behaviour of cells.
 
-The idea is simple: when a genome produces complex behaviours to the
-environment (or to other cells), the system approaches a kind of equilibrium.
-If a simulation is stable, cells are able to survive indefinitely. In such
-cases, and one random mutation is unlikely to destabalise the entire system.
-Thus, unuseful, random mutations rarely contribute to the overall system. It is
-only when many mutations are collectively considered that destablising
-behaviours may emerge (ideally).
+The idea is simple: when a genome produces complex behaviours to the environment (or to
+other cells), the system approaches a kind of equilibrium. If a simulation is stable,
+cells are able to survive indefinitely. In such cases, and one random mutation is unlikely
+to destabalise the entire system. Thus, unuseful, random mutations rarely contribute to
+the overall system. It is only when many mutations are collectively considered that
+destablising behaviours may emerge (ideally).
 
-More details regarding the genome and how it effects cells can be found in the [genome]() section.
+More details regarding the genome and how it effects cells can be found in the [genome]()
+section.
 
 ### Leaf
 
@@ -47,7 +47,7 @@ Branch cells transfer energy between cells within the same organism.
 
 ### Seed
 
-Seeds are the second type of cell whose behaviour is determined by the cell genome.
+Seeds can be fired by sprouts and can turn into a sprout.
 
 ## Behaviour
 
