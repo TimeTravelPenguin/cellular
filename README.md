@@ -1,3 +1,5 @@
+[![mdBook](https://github.com/TimeTravelPenguin/cellular/actions/workflows/mdbook.yml/badge.svg)](https://timetravelpenguin.github.io/cellular/)
+
 # Genetic Cellular Automata (WIP)
 
 The simulation is an implementation of the work by [Simulife Hub]. The
