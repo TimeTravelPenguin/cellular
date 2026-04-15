@@ -126,8 +126,8 @@
   "Command Fallbacks",
   "Sprout Command 01",
   "Sprout Command 02",
-  "Seed Command 01",
-  "Seed Command 02",
+  "Lone Sprout\nCommand 01",
+  "Lone Sprout\nCommand 02",
 )
 
 #let indexes = (

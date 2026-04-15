@@ -29,6 +29,8 @@ The following shows the structure of one of the 52 genes composing of a genome.
 
 The genome controls how sprout and seed cells behave.
 
+![genome execution](../assets/genome_bytes.svg)
+
 ![genome execution](../assets/genome_execution.svg)
 
 - The spawn action block indicates what cells should be spawned in the left, forward, and
