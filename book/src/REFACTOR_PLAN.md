@@ -1,5 +1,8 @@
 # Refactor Plan: Request/Resolve Architecture for Cellular Simulation
 
+> [!NOTE]
+> This file was generated using Claude
+
 ## Context
 
 The simulation is a Rust/Bevy port of the CLANS3 Processing/Java artificial life

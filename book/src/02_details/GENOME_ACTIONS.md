@@ -1,5 +1,8 @@
 # Genome Actions Reference
 
+> [!NOTE]
+> This file was generated using Claude
+
 Detailed breakdown of all genome-driven actions in the CLANS3 simulation, extracted from
 the Processing source code (`Cells.pde`, `constant.pde`).
 
