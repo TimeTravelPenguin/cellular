@@ -147,10 +147,10 @@ impl Distribution<CurrentLocationResourceCondition> for StandardUniform {
 #[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[strum_discriminants(derive(VariantArray))]
 pub enum OrganismDepthCondition {
-    DepthIsEven,
-    DepthIsOdd,
-    DepthGreaterThan(usize),
-    DepthLessThan(usize),
+    IsEven,
+    IsOdd,
+    GreaterThan(usize),
+    LessThan(usize),
 }
 
 impl Distribution<OrganismDepthCondition> for StandardUniform {
@@ -162,12 +162,10 @@ impl Distribution<OrganismDepthCondition> for StandardUniform {
             .expect("OrganismDepthCondition variants should not be empty");
 
         match variant {
-            D::DepthIsEven => OrganismDepthCondition::DepthIsEven,
-            D::DepthIsOdd => OrganismDepthCondition::DepthIsOdd,
-            D::DepthGreaterThan => {
-                OrganismDepthCondition::DepthGreaterThan(rng.random_range(0..10))
-            }
-            D::DepthLessThan => OrganismDepthCondition::DepthLessThan(rng.random_range(0..10)),
+            D::IsEven => OrganismDepthCondition::IsEven,
+            D::IsOdd => OrganismDepthCondition::IsOdd,
+            D::GreaterThan => OrganismDepthCondition::GreaterThan(rng.random_range(0..10)),
+            D::LessThan => OrganismDepthCondition::LessThan(rng.random_range(0..10)),
         }
     }
 }
