@@ -75,7 +75,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn serialize_deserialize_genome() {
+    fn serialize_deserialize_genome_equal() {
         let rng = &mut rand::rng();
         let original_genome: Genome = rng.random();
 
