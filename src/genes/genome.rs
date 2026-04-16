@@ -111,12 +111,13 @@ pub enum ChargeEnergyComparison {
     DirectionGreaterThanThreshold(RelativeDirection, f32),
 }
 
-/// TODO: Unsure.
+/// Conditions comparing the presence of free space and non-toxic soil of the
+/// 3x3 region in a specific direction to a threshold value.
 #[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[strum_discriminants(derive(VariantArray))]
-pub enum FreeSpaceComparison {
-    DirectionComparison(DirectionComparison),
-    DirectionGreaterThanThreshold(RelativeDirection, usize),
+pub enum UnoccupiedNonToxic3x3Comparison {
+    DirectionComparison3x3(DirectionComparison),
+    Direction3x3GreaterThanThreshold(RelativeDirection, usize),
 }
 
 /// Conditions related to the detecting toxic energy levels in the soil.
@@ -141,7 +142,7 @@ pub enum GenomePrecondition {
     LightEnergyComparison(DirectionComparison),
     OrganicEnergyComparison(OrganicEnergyComparison),
     ChargeEnergyComparison(ChargeEnergyComparison),
-    FreeSpaceComparison(FreeSpaceComparison),
+    FreeSpaceComparison(UnoccupiedNonToxic3x3Comparison),
     PoisonDetection(PoisonDetection),
 }
 
