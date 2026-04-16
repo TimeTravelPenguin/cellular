@@ -26,6 +26,10 @@ use crate::energy::NeighbouringEnergy;
 pub const GENOME_SIZE: usize = 52;
 pub const GENOME_COMMAND_PROBABILITY: f64 = 0.5;
 
+pub trait Mutate {
+    fn mutate<R: Rng + ?Sized>(&mut self, rng: &mut R);
+}
+
 #[derive(Error, Debug)]
 pub enum GenomeError {
     #[error("Invalid GenomeID value: {0}")]

@@ -1,10 +1,11 @@
 use rand::{
     Rng, RngExt,
     distr::{Distribution, StandardUniform},
+    seq::IndexedMutRandom,
 };
 use strum::VariantArray;
 
-use crate::genes::genome::PreconditionCommands;
+use crate::genes::{Mutate, genome::PreconditionCommands};
 
 use super::{
     Cell, CellEnergyComparison, ChargeEnergyComparison, ChargeEnergyComparisonDiscriminants,
@@ -103,6 +104,17 @@ impl Distribution<GenomeSpawn> for StandardUniform {
             forward_cell_spawn: random_spawnable_cell_type(rng),
             right_cell_spawn: random_spawnable_cell_type(rng),
             left_cell_spawn: random_spawnable_cell_type(rng),
+        }
+    }
+}
+
+impl Mutate for GenomeSpawn {
+    fn mutate<R: Rng + ?Sized>(&mut self, rng: &mut R) {
+        match rng.random_range(0..3) {
+            0 => self.forward_cell_spawn = random_spawnable_cell_type(rng),
+            1 => self.right_cell_spawn = random_spawnable_cell_type(rng),
+            2 => self.left_cell_spawn = random_spawnable_cell_type(rng),
+            _ => unreachable!(),
         }
     }
 }
@@ -211,12 +223,12 @@ impl_sample_discriminant! {
     MultiCellCommandDiscriminants => MultiCellCommand, |rng| {
         SkipTurn,
         BecomeASeed,
-        BecomeADetachedSeed { is_stationary: rng.random_bool(0.5) },
+        BecomeADetachedSeed { is_stationary: rng.random() },
         Die,
         SeparateFromOrganism,
         TransportSoilEnergy(rng.random()),
         TransportSoilOrganicMatter(rng.random()),
-        ShootSeed { high_energy: rng.random_bool(0.5) },
+        ShootSeed { high_energy: rng.random() },
         DistributeEnergyAsOrganicMatter,
     }
 }
@@ -238,6 +250,16 @@ impl Distribution<GenomeCommandResult> for StandardUniform {
     }
 }
 
+impl Mutate for GenomeCommandResult {
+    fn mutate<R: Rng + ?Sized>(&mut self, rng: &mut R) {
+        if rng.random::<bool>() {
+            self.success_next_genome = rng.random();
+        } else {
+            self.fail_next_genome = rng.random();
+        }
+    }
+}
+
 impl<T> Distribution<PreconditionCommands<T>> for StandardUniform
 where
     StandardUniform: Distribution<T>,
@@ -250,6 +272,23 @@ where
             preconditions_unmet_command: rng
                 .random_bool(GENOME_COMMAND_PROBABILITY)
                 .then(|| rng.random()),
+        }
+    }
+}
+
+impl<T> Mutate for PreconditionCommands<T>
+where
+    StandardUniform: Distribution<T>,
+{
+    fn mutate<R: Rng + ?Sized>(&mut self, rng: &mut R) {
+        if rng.random::<bool>() {
+            self.preconditions_met_command = rng
+                .random_bool(GENOME_COMMAND_PROBABILITY)
+                .then(|| rng.random());
+        } else {
+            self.preconditions_unmet_command = rng
+                .random_bool(GENOME_COMMAND_PROBABILITY)
+                .then(|| rng.random());
         }
     }
 }
@@ -267,10 +306,59 @@ impl Distribution<GenomeEntry> for StandardUniform {
     }
 }
 
+impl Mutate for GenomeEntry {
+    fn mutate<R: Rng + ?Sized>(&mut self, rng: &mut R) {
+        match rng.random_range(0..6) {
+            0 => self.spawn.mutate(rng),
+            1 => {
+                let index = rng.random_range(0..self.preconditions.len());
+                self.preconditions[index] = rng.random::<bool>().then(|| rng.random());
+            }
+            2 => self.multi_cell_commands.mutate(rng),
+            3 => self.single_cell_commands.mutate(rng),
+            4 => self.condition_met_fallback = rng.random(),
+            5 => self.condition_unmet_fallback = rng.random(),
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl Distribution<Genome> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Genome {
         Genome {
             genomes: std::array::from_fn(|_| rng.random()),
         }
+    }
+}
+
+impl Mutate for Genome {
+    fn mutate<R: Rng + ?Sized>(&mut self, rng: &mut R) {
+        self.genomes
+            .choose_mut(rng)
+            .expect("Genome should have at least one entry")
+            .mutate(rng);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::RngExt;
+
+    #[test]
+    fn mutate_genome() {
+        use crate::genes::{Genome, Mutate};
+
+        let rng = &mut rand::rng();
+        let mut genome: Genome = rng.random();
+
+        let original_genome = genome.clone();
+        while genome == original_genome {
+            genome.mutate(rng);
+        }
+
+        assert_ne!(
+            genome, original_genome,
+            "Mutated genome should differ from the original genome"
+        );
     }
 }
