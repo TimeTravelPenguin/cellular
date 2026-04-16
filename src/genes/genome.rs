@@ -4,8 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use strum::{EnumDiscriminants, VariantArray};
 
-use crate::cells::Cell;
-use crate::genes::{GENOME_SIZE, GenomeError, RelativeDirection};
+use crate::{
+    cells::Cell,
+    genes::{GENOME_SIZE, GenomeError, RelativeDirection},
+};
 
 /// A unique identifier for a genome entry, represented as an
 /// index into the genome.
@@ -78,6 +80,7 @@ pub enum SoilEnergyAreaComparison {
 #[strum_discriminants(derive(VariantArray))]
 pub enum SpatialAwarenessCondition {
     NearbyEdibleCells,
+    /// Checks if the forward, left, and right neighbouring cells are all unoccupied.
     Empty3Neighbourhood,
     EmptyRelativeDirection(RelativeDirection),
     ObstacleInDirection(RelativeDirection),

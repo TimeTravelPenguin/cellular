@@ -1,23 +1,13 @@
 use rand::{
     Rng, RngExt,
     distr::{Distribution, StandardUniform},
-    seq::IndexedMutRandom,
+    seq::{IndexedMutRandom, IndexedRandom},
 };
 use strum::VariantArray;
 
-use crate::genes::{Mutate, genome::PreconditionCommands};
-
-use super::{
-    Cell, CellEnergyComparison, ChargeEnergyComparison, ChargeEnergyComparisonDiscriminants,
-    CurrentLocationResourceCondition, CurrentLocationResourceConditionDiscriminants,
-    DirectionComparison, FreeSpaceComparison, FreeSpaceComparisonDiscriminants,
-    GENOME_COMMAND_PROBABILITY, GENOME_SIZE, Genome, GenomeCommandResult, GenomeEntry, GenomeID,
-    GenomePrecondition, GenomePreconditionDiscriminants, GenomeSpawn, IndexedRandom,
-    MultiCellCommand, MultiCellCommandDiscriminants, OrganicEnergyComparison,
-    OrganicEnergyComparisonDiscriminants, OrganismDepthCondition,
-    OrganismDepthConditionDiscriminants, PoisonDetection, PoisonDetectionDiscriminants,
-    SingleCellCommand, SoilEnergyAreaComparison, SoilEnergyAreaComparisonDiscriminants,
-    SpatialAwarenessCondition, SpatialAwarenessConditionDiscriminants,
+use crate::{
+    cells::Cell,
+    genes::{GENOME_COMMAND_PROBABILITY, GENOME_SIZE, Mutate, genome::*},
 };
 
 trait SampleDiscriminant {
@@ -189,9 +179,9 @@ impl_sample_discriminant! {
 }
 
 impl_sample_discriminant! {
-    FreeSpaceComparisonDiscriminants => FreeSpaceComparison, |rng| {
-        DirectionComparison(rng.random()),
-        DirectionGreaterThanThreshold(rng.random(), rng.random_range(0..10)),
+    UnoccupiedNonToxic3x3ComparisonDiscriminants => UnoccupiedNonToxic3x3Comparison, |rng| {
+        DirectionComparison3x3(rng.random()),
+        Direction3x3GreaterThanThreshold(rng.random(), rng.random_range(0..10)),
     }
 }
 

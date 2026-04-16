@@ -11,16 +11,16 @@ mod random;
 pub use genome::{
     CellEnergyComparison, ChargeEnergyComparison, ChargeEnergyComparisonDiscriminants,
     CurrentLocationResourceCondition, CurrentLocationResourceConditionDiscriminants,
-    DirectionComparison, FreeSpaceComparison, FreeSpaceComparisonDiscriminants, Genome,
-    GenomeCommandResult, GenomeEntry, GenomeID, GenomePrecondition,
+    DirectionComparison, Genome, GenomeCommandResult, GenomeEntry, GenomeID, GenomePrecondition,
     GenomePreconditionDiscriminants, GenomeSpawn, MultiCellCommand, MultiCellCommandDiscriminants,
     OrganicEnergyComparison, OrganicEnergyComparisonDiscriminants, OrganismDepthCondition,
     OrganismDepthConditionDiscriminants, PoisonDetection, PoisonDetectionDiscriminants,
-    SingleCellCommand, SoilEnergyAreaComparison, SoilEnergyAreaComparisonDiscriminants,
-    SpatialAwarenessCondition, SpatialAwarenessConditionDiscriminants,
+    PreconditionCommands, SingleCellCommand, SoilEnergyAreaComparison,
+    SoilEnergyAreaComparisonDiscriminants, SpatialAwarenessCondition,
+    SpatialAwarenessConditionDiscriminants, UnoccupiedNonToxic3x3Comparison,
+    UnoccupiedNonToxic3x3ComparisonDiscriminants,
 };
 
-use crate::cells::Cell;
 use crate::energy::NeighbouringEnergy;
 
 pub const GENOME_SIZE: usize = 52;
