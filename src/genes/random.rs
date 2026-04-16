@@ -1,69 +1,28 @@
-use bevy::ecs::component::Component;
-use bevy::reflect::Reflect;
-use rand::distr::{Distribution, StandardUniform};
-use rand::seq::IndexedRandom;
-use rand::{Rng, RngExt};
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use strum::{EnumDiscriminants, VariantArray};
-use thiserror::Error;
+use rand::{
+    Rng, RngExt,
+    distr::{Distribution, StandardUniform},
+};
+use strum::VariantArray;
 
-use crate::cells::Cell;
-use crate::energy::NeighbouringEnergy;
+use crate::genes::genome::PreconditionCommands;
 
-pub const GENOME_SIZE: usize = 52;
-pub const GENOME_COMMAND_PROBABILITY: f64 = 0.5;
-
-#[derive(Error, Debug)]
-pub enum GenomeError {
-    #[error("Invalid GenomeID value: {0}")]
-    InvalidGenomeID(usize),
-}
-
-#[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GenomeID(pub usize);
+use super::{
+    Cell, CellEnergyComparison, ChargeEnergyComparison, ChargeEnergyComparisonDiscriminants,
+    CurrentLocationResourceCondition, CurrentLocationResourceConditionDiscriminants,
+    DirectionComparison, FreeSpaceComparison, FreeSpaceComparisonDiscriminants,
+    GENOME_COMMAND_PROBABILITY, GENOME_SIZE, Genome, GenomeCommandResult, GenomeEntry, GenomeID,
+    GenomePrecondition, GenomePreconditionDiscriminants, GenomeSpawn, IndexedRandom,
+    MultiCellCommand, MultiCellCommandDiscriminants, OrganicEnergyComparison,
+    OrganicEnergyComparisonDiscriminants, OrganismDepthCondition,
+    OrganismDepthConditionDiscriminants, PoisonDetection, PoisonDetectionDiscriminants,
+    SingleCellCommand, SoilEnergyAreaComparison, SoilEnergyAreaComparisonDiscriminants,
+    SpatialAwarenessCondition, SpatialAwarenessConditionDiscriminants,
+};
 
 impl Distribution<GenomeID> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GenomeID {
         GenomeID(rng.random_range(0..GENOME_SIZE))
     }
-}
-
-impl TryFrom<usize> for GenomeID {
-    type Error = GenomeError;
-
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
-        if value < GENOME_SIZE {
-            Ok(GenomeID(value))
-        } else {
-            Err(GenomeError::InvalidGenomeID(value))
-        }
-    }
-}
-
-/// Directions relative to the cell's facing direction.
-#[derive(Clone, Copy, VariantArray, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RelativeDirection {
-    Left,
-    Right,
-    Forward,
-}
-
-impl Distribution<RelativeDirection> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> RelativeDirection {
-        *RelativeDirection::VARIANTS
-            .choose(rng)
-            .expect("RelativeDirection variants should not be empty")
-    }
-}
-
-/// Cell spawn information determining the types of cells that will be spawned
-/// as the organism grows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GenomeSpawn {
-    pub forward_cell_spawn: Option<Cell>,
-    pub right_cell_spawn: Option<Cell>,
-    pub left_cell_spawn: Option<Cell>,
 }
 
 #[inline]
@@ -76,11 +35,11 @@ fn random_spawnable_cell_type<R: Rng + ?Sized>(rng: &mut R) -> Option<Cell> {
     // 96..=255 => None
     let roll = rng.random_range(0..=255);
     match roll {
-        0..=63 => Some(Cell::Sprout),
-        64..=75 => Some(Cell::Leaf),
-        76..=85 => Some(Cell::Antenna),
-        86..=95 => Some(Cell::Root),
-        _ => None,
+        0..=63 => Some(Cell::Sprout),   // 25%
+        64..=75 => Some(Cell::Leaf),    // 4.7%
+        76..=85 => Some(Cell::Antenna), // 3.9%
+        86..=95 => Some(Cell::Root),    // 3.9%
+        _ => None,                      // 62.5%
     }
 }
 
@@ -94,31 +53,6 @@ impl Distribution<GenomeSpawn> for StandardUniform {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ObstacleInfo {
-    pub forward: bool,
-    pub left: bool,
-    pub right: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct PreconditionParameters {
-    pub organic_energy: NeighbouringEnergy,
-    pub charge_energy: NeighbouringEnergy,
-    pub cell_energy_has_increased: bool,
-    pub obstacles: ObstacleInfo,
-    pub rng_value: u8,
-}
-
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum CurrentLocationResourceCondition {
-    OrganicAtPositionLessThanThreshold(f32),
-    OrganicAtPositionExceedsThreshold(f32),
-    ChargeAtPositionLessThanThreshold(f32),
-    ChargeAtPositionExceedsThreshold(f32),
-}
-
 impl Distribution<CurrentLocationResourceCondition> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> CurrentLocationResourceCondition {
         use CurrentLocationResourceConditionDiscriminants as D;
@@ -128,29 +62,20 @@ impl Distribution<CurrentLocationResourceCondition> for StandardUniform {
             .expect("CurrentLocationResourceCondition variants should not be empty");
 
         match variant {
-            D::OrganicAtPositionLessThanThreshold => {
-                CurrentLocationResourceCondition::OrganicAtPositionLessThanThreshold(rng.random())
+            D::OrganicAtPositionLessThan => {
+                CurrentLocationResourceCondition::OrganicAtPositionLessThan(rng.random())
             }
-            D::OrganicAtPositionExceedsThreshold => {
-                CurrentLocationResourceCondition::OrganicAtPositionExceedsThreshold(rng.random())
+            D::OrganicAtPositionExceeds => {
+                CurrentLocationResourceCondition::OrganicAtPositionExceeds(rng.random())
             }
-            D::ChargeAtPositionLessThanThreshold => {
-                CurrentLocationResourceCondition::ChargeAtPositionLessThanThreshold(rng.random())
+            D::ChargeAtPositionLessThan => {
+                CurrentLocationResourceCondition::ChargeAtPositionLessThan(rng.random())
             }
-            D::ChargeAtPositionExceedsThreshold => {
-                CurrentLocationResourceCondition::ChargeAtPositionExceedsThreshold(rng.random())
+            D::ChargeAtPositionExceeds => {
+                CurrentLocationResourceCondition::ChargeAtPositionExceeds(rng.random())
             }
         }
     }
-}
-
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum OrganismDepthCondition {
-    IsEven,
-    IsOdd,
-    GreaterThan(usize),
-    LessThan(usize),
 }
 
 impl Distribution<OrganismDepthCondition> for StandardUniform {
@@ -170,29 +95,12 @@ impl Distribution<OrganismDepthCondition> for StandardUniform {
     }
 }
 
-#[derive(VariantArray, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum CellEnergyComparison {
-    HasIncreased,
-    HasDecreased,
-}
-
 impl Distribution<CellEnergyComparison> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> CellEnergyComparison {
         *CellEnergyComparison::VARIANTS
             .choose(rng)
             .expect("CellEnergyComparison variants should not be empty")
     }
-}
-
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum SoilEnergyAreaComparison {
-    Organic3x3GreaterThanThreshold(f32),
-    Organic3x3LessThanThreshold(f32),
-    Charge3x3GreaterThanThreshold(f32),
-    Charge3x3LessThanThreshold(f32),
-    Organic3x3GreaterThanCharge3x3,
-    Organic3x3LessThanCharge3x3,
 }
 
 impl Distribution<SoilEnergyAreaComparison> for StandardUniform {
@@ -224,16 +132,6 @@ impl Distribution<SoilEnergyAreaComparison> for StandardUniform {
     }
 }
 
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum SpatialAwarenessCondition {
-    NearbyEdibleCells,
-    Empty3Neighbourhood,
-    EmptyRelativeDirection(RelativeDirection),
-    ObstacleInDirection(RelativeDirection),
-    HasParent,
-}
-
 impl Distribution<SpatialAwarenessCondition> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> SpatialAwarenessCondition {
         use SpatialAwarenessConditionDiscriminants as D;
@@ -254,29 +152,12 @@ impl Distribution<SpatialAwarenessCondition> for StandardUniform {
     }
 }
 
-#[derive(VariantArray, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum DirectionComparison {
-    CenterGreaterThanLeft,
-    CenterGreaterThanRight,
-    LeftGreaterThanCenter,
-    LeftGreaterThanRight,
-    RightGreaterThanCenter,
-    RightGreaterThanLeft,
-}
-
 impl Distribution<DirectionComparison> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> DirectionComparison {
         *DirectionComparison::VARIANTS
             .choose(rng)
             .expect("DirectionComparison variants should not be empty")
     }
-}
-
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum OrganicEnergyComparison {
-    DirectionComparison(DirectionComparison),
-    DirectionGreaterThanThreshold(RelativeDirection, f32),
 }
 
 impl Distribution<OrganicEnergyComparison> for StandardUniform {
@@ -299,13 +180,6 @@ impl Distribution<OrganicEnergyComparison> for StandardUniform {
     }
 }
 
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum ChargeEnergyComparison {
-    DirectionComparison(DirectionComparison),
-    DirectionGreaterThanThreshold(RelativeDirection, f32),
-}
-
 impl Distribution<ChargeEnergyComparison> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> ChargeEnergyComparison {
         use ChargeEnergyComparisonDiscriminants as D;
@@ -326,13 +200,6 @@ impl Distribution<ChargeEnergyComparison> for StandardUniform {
     }
 }
 
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum FreeSpaceComparison {
-    DirectionComparison(DirectionComparison),
-    DirectionGreaterThanThreshold(RelativeDirection, usize),
-}
-
 impl Distribution<FreeSpaceComparison> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> FreeSpaceComparison {
         use FreeSpaceComparisonDiscriminants as D;
@@ -351,14 +218,6 @@ impl Distribution<FreeSpaceComparison> for StandardUniform {
     }
 }
 
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum PoisonDetection {
-    Organic(RelativeDirection),
-    Charge(RelativeDirection),
-    Any(RelativeDirection),
-}
-
 impl Distribution<PoisonDetection> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PoisonDetection {
         use PoisonDetectionDiscriminants as D;
@@ -372,30 +231,6 @@ impl Distribution<PoisonDetection> for StandardUniform {
             D::Charge => PoisonDetection::Charge(rng.random()),
             D::Any => PoisonDetection::Any(rng.random()),
         }
-    }
-}
-
-/// Preconditions that are checked before executing a genome command. If the precondition is not met,
-/// the genome specified in `GenomeConditional::fail_next_genome` will be executed instead.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum GenomePrecondition {
-    CurrentLocationResourceCondition(CurrentLocationResourceCondition),
-    OrganismDepthCondition(OrganismDepthCondition),
-    CellEnergyComparison(CellEnergyComparison),
-    SoilEnergyAreaComparison(SoilEnergyAreaComparison),
-    SpatialAwarenessCondition(SpatialAwarenessCondition),
-    RandomGreaterThan(u8),
-    LightEnergyComparison(DirectionComparison),
-    OrganicEnergyComparison(OrganicEnergyComparison),
-    ChargeEnergyComparison(ChargeEnergyComparison),
-    FreeSpaceComparison(FreeSpaceComparison),
-    PoisonDetection(PoisonDetection),
-}
-
-impl GenomePrecondition {
-    pub fn check(&self, _params: &PreconditionParameters) -> bool {
-        todo!()
     }
 }
 
@@ -429,21 +264,6 @@ impl Distribution<GenomePrecondition> for StandardUniform {
     }
 }
 
-/// Commands that a cell can execute based on its genome.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum MultiCellCommand {
-    SkipTurn,
-    BecomeASeed,
-    BecomeADetachedSeed { is_stationary: bool },
-    Die,
-    SeparateFromOrganism,
-    TransportSoilEnergy(RelativeDirection),
-    TransportSoilOrganicMatter(RelativeDirection),
-    ShootSeed { high_energy: bool },
-    DistributeEnergyAsOrganicMatter,
-}
-
 impl Distribution<MultiCellCommand> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MultiCellCommand {
         use MultiCellCommandDiscriminants as D;
@@ -472,41 +292,12 @@ impl Distribution<MultiCellCommand> for StandardUniform {
     }
 }
 
-#[derive(VariantArray, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SingleCellCommand {
-    MoveForward,
-    TurnLeft,
-    TurnRight,
-    TurnAround,
-    TurnLeftAndMove,
-    TurnRightAndMove,
-    TurnAroundAndMove,
-    TurnRandom,
-    MoveRandom,
-    Parasitise,
-    PullOrganicFromLeft,
-    PullOrganicFromRight,
-    PullOrganicFromForward,
-    PullChargeFromLeft,
-    PullChargeFromRight,
-    PullChargeFromForward,
-    ConsumeNeighbours,
-    TakeEnergyFromSoil,
-}
-
 impl Distribution<SingleCellCommand> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> SingleCellCommand {
         *SingleCellCommand::VARIANTS
             .choose(rng)
             .expect("SingleCellCommand variants should not be empty")
     }
-}
-
-/// The next active genome based on the success or failure of executing the main command.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GenomeCommandResult {
-    pub success_next_genome: GenomeID,
-    pub fail_next_genome: GenomeID,
 }
 
 impl Distribution<GenomeCommandResult> for StandardUniform {
@@ -518,40 +309,20 @@ impl Distribution<GenomeCommandResult> for StandardUniform {
     }
 }
 
-/// A conditional genome command that checks a precondition and executes either
-/// the main command or a fallback genome.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct GenomeCommands<T> {
-    pub preconditions_met_command: Option<T>,
-    pub preconditions_unmet_command: Option<T>,
-}
-
-impl<T> Distribution<GenomeCommands<T>> for StandardUniform
+impl<T> Distribution<PreconditionCommands<T>> for StandardUniform
 where
     StandardUniform: Distribution<T>,
 {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GenomeCommands<T> {
-        let [preconditions_met_command, preconditions_unmet_command] = std::array::from_fn(|_| {
-            rng.random_bool(GENOME_COMMAND_PROBABILITY)
-                .then(|| rng.random())
-        });
-
-        GenomeCommands {
-            preconditions_met_command,
-            preconditions_unmet_command,
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PreconditionCommands<T> {
+        PreconditionCommands {
+            preconditions_met_command: rng
+                .random_bool(GENOME_COMMAND_PROBABILITY)
+                .then(|| rng.random()),
+            preconditions_unmet_command: rng
+                .random_bool(GENOME_COMMAND_PROBABILITY)
+                .then(|| rng.random()),
         }
     }
-}
-
-/// The genome of a cell, consisting of spawn information and a set of conditional commands.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct GenomeEntry {
-    pub spawn: GenomeSpawn,
-    pub preconditions: Vec<GenomePrecondition>,
-    pub multi_cell_commands: GenomeCommands<MultiCellCommand>,
-    pub single_cell_commands: GenomeCommands<SingleCellCommand>,
-    pub condition_met_fallback: GenomeID,
-    pub condition_unmet_fallback: GenomeID,
 }
 
 impl Distribution<GenomeEntry> for StandardUniform {
@@ -567,66 +338,10 @@ impl Distribution<GenomeEntry> for StandardUniform {
     }
 }
 
-#[serde_as]
-#[derive(Component, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Genome {
-    #[serde_as(as = "[_; GENOME_SIZE]")]
-    genomes: [GenomeEntry; GENOME_SIZE],
-}
-
-impl Genome {
-    pub fn get_entry(&self, genome_id: GenomeID) -> &GenomeEntry {
-        &self.genomes[genome_id.0]
-    }
-
-    pub fn execute(&self, genome_id: &mut GenomeID, precondition_params: &PreconditionParameters) {
-        let gene = self.get_entry(*genome_id);
-
-        if gene.preconditions.is_empty() {
-            todo!("Spawn cells")
-        }
-
-        let all_preconditions_met = gene
-            .preconditions
-            .iter()
-            .all(|precondition| precondition.check(precondition_params));
-
-        let _action = if all_preconditions_met {
-            let _multi_command = gene.multi_cell_commands.preconditions_met_command;
-            let _single_command = gene.single_cell_commands.preconditions_met_command;
-
-            todo!("Handle multi_command or single_command execution and determine next genome")
-        } else {
-            let _multi_command = gene.multi_cell_commands.preconditions_unmet_command;
-            let _single_command = gene.single_cell_commands.preconditions_unmet_command;
-
-            todo!("Handle multi_command or single_command execution and determine next genome")
-        };
-    }
-}
-
 impl Distribution<Genome> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Genome {
         Genome {
             genomes: std::array::from_fn(|_| rng.random()),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn serialize_deserialize_genome() {
-        let rng = &mut rand::rng();
-        let original_genome: Genome = rng.random();
-
-        let serialized =
-            serde_json::to_string(&original_genome).expect("Failed to serialize genome");
-        let deserialized: Genome =
-            serde_json::from_str(&serialized).expect("Failed to deserialize genome");
-
-        assert_eq!(original_genome, deserialized);
     }
 }
