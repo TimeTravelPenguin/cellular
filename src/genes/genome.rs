@@ -203,7 +203,7 @@ pub struct PreconditionCommands<T> {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GenomeEntry {
     pub spawn: GenomeSpawn,
-    pub preconditions: Vec<GenomePrecondition>,
+    pub preconditions: [Option<GenomePrecondition>; 2],
     pub multi_cell_commands: PreconditionCommands<MultiCellCommand>,
     pub single_cell_commands: PreconditionCommands<SingleCellCommand>,
     pub condition_met_fallback: GenomeID,

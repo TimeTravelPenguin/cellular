@@ -258,7 +258,7 @@ impl Distribution<GenomeEntry> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GenomeEntry {
         GenomeEntry {
             spawn: rng.random(),
-            preconditions: (0..rng.random_range(0..2)).map(|_| rng.random()).collect(),
+            preconditions: std::array::from_fn(|_| rng.random::<bool>().then(|| rng.random())),
             multi_cell_commands: rng.random(),
             single_cell_commands: rng.random(),
             condition_met_fallback: rng.random(),
