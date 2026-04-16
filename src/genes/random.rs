@@ -19,6 +19,60 @@ use super::{
     SpatialAwarenessCondition, SpatialAwarenessConditionDiscriminants,
 };
 
+trait SampleDiscriminant {
+    type Output;
+    fn sample_discriminant<R: Rng + ?Sized>(&self, rng: &mut R) -> Self::Output;
+}
+
+/// Implements `SampleDiscriminant` and `Distribution` for a discriminant/enum pair.
+///
+/// Supports unit, tuple, and struct variants:
+/// ```ignore
+/// impl_sample_discriminant! {
+///     FooDiscriminants => Foo, |rng| {
+///         UnitVariant,
+///         TupleVariant(rng.random(), rng.random_range(0..10)),
+///         StructVariant { field: rng.random_bool(0.5) },
+///     }
+/// }
+/// ```
+macro_rules! impl_sample_discriminant {
+    (
+        $disc:ident => $target:ident, |$rng:ident| {
+            $(
+                $variant:ident
+                $(( $($field_expr:expr),* $(,)? ))?
+                $({ $($field_name:ident : $field_val:expr),* $(,)? })?
+            ),*
+            $(,)?
+        }
+    ) => {
+        impl SampleDiscriminant for $disc {
+            type Output = $target;
+
+            fn sample_discriminant<R: Rng + ?Sized>(&self, $rng: &mut R) -> $target {
+                match self {
+                    $(
+                        Self::$variant => $target::$variant
+                            $(( $($field_expr),* ))?
+                            $({ $($field_name: $field_val),* })?,
+                    )*
+                }
+            }
+        }
+
+        impl Distribution<$target> for StandardUniform {
+            fn sample<R: Rng + ?Sized>(&self, $rng: &mut R) -> $target {
+                let variant = $disc::VARIANTS
+                    .choose($rng)
+                    .expect(concat!(stringify!($target), " variants should not be empty"));
+
+                variant.sample_discriminant($rng)
+            }
+        }
+    };
+}
+
 impl Distribution<GenomeID> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GenomeID {
         GenomeID(rng.random_range(0..GENOME_SIZE))
@@ -53,45 +107,21 @@ impl Distribution<GenomeSpawn> for StandardUniform {
     }
 }
 
-impl Distribution<CurrentLocationResourceCondition> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> CurrentLocationResourceCondition {
-        use CurrentLocationResourceConditionDiscriminants as D;
-
-        let variant = D::VARIANTS
-            .choose(rng)
-            .expect("CurrentLocationResourceCondition variants should not be empty");
-
-        match variant {
-            D::OrganicAtPositionLessThan => {
-                CurrentLocationResourceCondition::OrganicAtPositionLessThan(rng.random())
-            }
-            D::OrganicAtPositionExceeds => {
-                CurrentLocationResourceCondition::OrganicAtPositionExceeds(rng.random())
-            }
-            D::ChargeAtPositionLessThan => {
-                CurrentLocationResourceCondition::ChargeAtPositionLessThan(rng.random())
-            }
-            D::ChargeAtPositionExceeds => {
-                CurrentLocationResourceCondition::ChargeAtPositionExceeds(rng.random())
-            }
-        }
+impl_sample_discriminant! {
+    CurrentLocationResourceConditionDiscriminants => CurrentLocationResourceCondition, |rng| {
+        OrganicAtPositionLessThan(rng.random()),
+        OrganicAtPositionExceeds(rng.random()),
+        ChargeAtPositionLessThan(rng.random()),
+        ChargeAtPositionExceeds(rng.random()),
     }
 }
 
-impl Distribution<OrganismDepthCondition> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> OrganismDepthCondition {
-        use OrganismDepthConditionDiscriminants as D;
-
-        let variant = D::VARIANTS
-            .choose(rng)
-            .expect("OrganismDepthCondition variants should not be empty");
-
-        match variant {
-            D::IsEven => OrganismDepthCondition::IsEven,
-            D::IsOdd => OrganismDepthCondition::IsOdd,
-            D::GreaterThan => OrganismDepthCondition::GreaterThan(rng.random_range(0..10)),
-            D::LessThan => OrganismDepthCondition::LessThan(rng.random_range(0..10)),
-        }
+impl_sample_discriminant! {
+    OrganismDepthConditionDiscriminants => OrganismDepthCondition, |rng| {
+        IsEven,
+        IsOdd,
+        GreaterThan(rng.random_range(0..10)),
+        LessThan(rng.random_range(0..10)),
     }
 }
 
@@ -103,52 +133,24 @@ impl Distribution<CellEnergyComparison> for StandardUniform {
     }
 }
 
-impl Distribution<SoilEnergyAreaComparison> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> SoilEnergyAreaComparison {
-        use SoilEnergyAreaComparisonDiscriminants as D;
-
-        let variant = D::VARIANTS
-            .choose(rng)
-            .expect("SoilEnergyAreaComparison variants should not be empty");
-
-        match variant {
-            D::Organic3x3GreaterThanThreshold => {
-                SoilEnergyAreaComparison::Organic3x3GreaterThanThreshold(rng.random())
-            }
-            D::Organic3x3LessThanThreshold => {
-                SoilEnergyAreaComparison::Organic3x3LessThanThreshold(rng.random())
-            }
-            D::Charge3x3GreaterThanThreshold => {
-                SoilEnergyAreaComparison::Charge3x3GreaterThanThreshold(rng.random())
-            }
-            D::Charge3x3LessThanThreshold => {
-                SoilEnergyAreaComparison::Charge3x3LessThanThreshold(rng.random())
-            }
-            D::Organic3x3GreaterThanCharge3x3 => {
-                SoilEnergyAreaComparison::Organic3x3GreaterThanCharge3x3
-            }
-            D::Organic3x3LessThanCharge3x3 => SoilEnergyAreaComparison::Organic3x3LessThanCharge3x3,
-        }
+impl_sample_discriminant! {
+    SoilEnergyAreaComparisonDiscriminants => SoilEnergyAreaComparison, |rng| {
+        Organic3x3GreaterThanThreshold(rng.random()),
+        Organic3x3LessThanThreshold(rng.random()),
+        Charge3x3GreaterThanThreshold(rng.random()),
+        Charge3x3LessThanThreshold(rng.random()),
+        Organic3x3GreaterThanCharge3x3,
+        Organic3x3LessThanCharge3x3,
     }
 }
 
-impl Distribution<SpatialAwarenessCondition> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> SpatialAwarenessCondition {
-        use SpatialAwarenessConditionDiscriminants as D;
-
-        let variant = D::VARIANTS
-            .choose(rng)
-            .expect("SpatialAwarenessCondition variants should not be empty");
-
-        match variant {
-            D::NearbyEdibleCells => SpatialAwarenessCondition::NearbyEdibleCells,
-            D::Empty3Neighbourhood => SpatialAwarenessCondition::Empty3Neighbourhood,
-            D::EmptyRelativeDirection => {
-                SpatialAwarenessCondition::EmptyRelativeDirection(rng.random())
-            }
-            D::ObstacleInDirection => SpatialAwarenessCondition::ObstacleInDirection(rng.random()),
-            D::HasParent => SpatialAwarenessCondition::HasParent,
-        }
+impl_sample_discriminant! {
+    SpatialAwarenessConditionDiscriminants => SpatialAwarenessCondition, |rng| {
+        NearbyEdibleCells,
+        Empty3Neighbourhood,
+        EmptyRelativeDirection(rng.random()),
+        ObstacleInDirection(rng.random()),
+        HasParent,
     }
 }
 
@@ -160,135 +162,62 @@ impl Distribution<DirectionComparison> for StandardUniform {
     }
 }
 
-impl Distribution<OrganicEnergyComparison> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> OrganicEnergyComparison {
-        use OrganicEnergyComparisonDiscriminants as D;
-
-        let variant = D::VARIANTS
-            .choose(rng)
-            .expect("OrganicEnergyComparison variants should not be empty");
-
-        match variant {
-            D::DirectionComparison => OrganicEnergyComparison::DirectionComparison(rng.random()),
-            D::DirectionGreaterThanThreshold => {
-                OrganicEnergyComparison::DirectionGreaterThanThreshold(
-                    rng.random(),
-                    rng.random_range(0.0..10.0),
-                )
-            }
-        }
+impl_sample_discriminant! {
+    OrganicEnergyComparisonDiscriminants => OrganicEnergyComparison, |rng| {
+        DirectionComparison(rng.random()),
+        DirectionGreaterThanThreshold(rng.random(), rng.random_range(0.0..10.0)),
     }
 }
 
-impl Distribution<ChargeEnergyComparison> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> ChargeEnergyComparison {
-        use ChargeEnergyComparisonDiscriminants as D;
-
-        let variant = D::VARIANTS
-            .choose(rng)
-            .expect("ChargeEnergyComparison variants should not be empty");
-
-        match variant {
-            D::DirectionComparison => ChargeEnergyComparison::DirectionComparison(rng.random()),
-            D::DirectionGreaterThanThreshold => {
-                ChargeEnergyComparison::DirectionGreaterThanThreshold(
-                    rng.random(),
-                    rng.random_range(0.0..10.0),
-                )
-            }
-        }
+impl_sample_discriminant! {
+    ChargeEnergyComparisonDiscriminants => ChargeEnergyComparison, |rng| {
+        DirectionComparison(rng.random()),
+        DirectionGreaterThanThreshold(rng.random(), rng.random_range(0.0..10.0)),
     }
 }
 
-impl Distribution<FreeSpaceComparison> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> FreeSpaceComparison {
-        use FreeSpaceComparisonDiscriminants as D;
-
-        let variant = D::VARIANTS
-            .choose(rng)
-            .expect("FreeSpaceComparison variants should not be empty");
-
-        match variant {
-            D::DirectionComparison => FreeSpaceComparison::DirectionComparison(rng.random()),
-            D::DirectionGreaterThanThreshold => FreeSpaceComparison::DirectionGreaterThanThreshold(
-                rng.random(),
-                rng.random_range(0..10),
-            ),
-        }
+impl_sample_discriminant! {
+    FreeSpaceComparisonDiscriminants => FreeSpaceComparison, |rng| {
+        DirectionComparison(rng.random()),
+        DirectionGreaterThanThreshold(rng.random(), rng.random_range(0..10)),
     }
 }
 
-impl Distribution<PoisonDetection> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PoisonDetection {
-        use PoisonDetectionDiscriminants as D;
-
-        let variant = D::VARIANTS
-            .choose(rng)
-            .expect("PoisonDetection variants should not be empty");
-
-        match variant {
-            D::Organic => PoisonDetection::Organic(rng.random()),
-            D::Charge => PoisonDetection::Charge(rng.random()),
-            D::Any => PoisonDetection::Any(rng.random()),
-        }
+impl_sample_discriminant! {
+    PoisonDetectionDiscriminants => PoisonDetection, |rng| {
+        Organic(rng.random()),
+        Charge(rng.random()),
+        Any(rng.random()),
     }
 }
 
-impl Distribution<GenomePrecondition> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GenomePrecondition {
-        use GenomePreconditionDiscriminants as D;
-
-        let variant = D::VARIANTS
-            .choose(rng)
-            .expect("GenomePrecondition variants should not be empty");
-
-        match variant {
-            D::CurrentLocationResourceCondition => {
-                GenomePrecondition::CurrentLocationResourceCondition(rng.random())
-            }
-            D::OrganismDepthCondition => GenomePrecondition::OrganismDepthCondition(rng.random()),
-            D::CellEnergyComparison => GenomePrecondition::CellEnergyComparison(rng.random()),
-            D::SoilEnergyAreaComparison => {
-                GenomePrecondition::SoilEnergyAreaComparison(rng.random())
-            }
-            D::SpatialAwarenessCondition => {
-                GenomePrecondition::SpatialAwarenessCondition(rng.random())
-            }
-            D::RandomGreaterThan => GenomePrecondition::RandomGreaterThan(rng.random()),
-            D::LightEnergyComparison => GenomePrecondition::LightEnergyComparison(rng.random()),
-            D::OrganicEnergyComparison => GenomePrecondition::OrganicEnergyComparison(rng.random()),
-            D::ChargeEnergyComparison => GenomePrecondition::ChargeEnergyComparison(rng.random()),
-            D::FreeSpaceComparison => GenomePrecondition::FreeSpaceComparison(rng.random()),
-            D::PoisonDetection => GenomePrecondition::PoisonDetection(rng.random()),
-        }
+impl_sample_discriminant! {
+    GenomePreconditionDiscriminants => GenomePrecondition, |rng| {
+        CurrentLocationResourceCondition(rng.random()),
+        OrganismDepthCondition(rng.random()),
+        CellEnergyComparison(rng.random()),
+        SoilEnergyAreaComparison(rng.random()),
+        SpatialAwarenessCondition(rng.random()),
+        RandomGreaterThan(rng.random()),
+        LightEnergyComparison(rng.random()),
+        OrganicEnergyComparison(rng.random()),
+        ChargeEnergyComparison(rng.random()),
+        FreeSpaceComparison(rng.random()),
+        PoisonDetection(rng.random()),
     }
 }
 
-impl Distribution<MultiCellCommand> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MultiCellCommand {
-        use MultiCellCommandDiscriminants as D;
-
-        let variant = D::VARIANTS
-            .choose(rng)
-            .expect("MultiCellCommand variants should not be empty");
-
-        match variant {
-            D::SkipTurn => MultiCellCommand::SkipTurn,
-            D::BecomeASeed => MultiCellCommand::BecomeASeed,
-            D::BecomeADetachedSeed => MultiCellCommand::BecomeADetachedSeed {
-                is_stationary: rng.random_bool(0.5),
-            },
-            D::Die => MultiCellCommand::Die,
-            D::SeparateFromOrganism => MultiCellCommand::SeparateFromOrganism,
-            D::TransportSoilEnergy => MultiCellCommand::TransportSoilEnergy(rng.random()),
-            D::TransportSoilOrganicMatter => {
-                MultiCellCommand::TransportSoilOrganicMatter(rng.random())
-            }
-            D::ShootSeed => MultiCellCommand::ShootSeed {
-                high_energy: rng.random_bool(0.5),
-            },
-            D::DistributeEnergyAsOrganicMatter => MultiCellCommand::DistributeEnergyAsOrganicMatter,
-        }
+impl_sample_discriminant! {
+    MultiCellCommandDiscriminants => MultiCellCommand, |rng| {
+        SkipTurn,
+        BecomeASeed,
+        BecomeADetachedSeed { is_stationary: rng.random_bool(0.5) },
+        Die,
+        SeparateFromOrganism,
+        TransportSoilEnergy(rng.random()),
+        TransportSoilOrganicMatter(rng.random()),
+        ShootSeed { high_energy: rng.random_bool(0.5) },
+        DistributeEnergyAsOrganicMatter,
     }
 }
 
