@@ -1,5 +1,6 @@
 use bevy::{
     ecs::{event::EntityEvent, query::QueryData},
+    platform::collections::HashMap,
     prelude::{
         Assets, Bundle, Circle, Color, ColorMaterial, Component, Deref, DerefMut, Ellipse, Entity,
         Mesh, Mesh2d, MeshMaterial2d, Message, Rectangle, Reflect, Transform, Vec, Vec3, vec,
@@ -53,6 +54,12 @@ pub struct BranchCell;
 #[derive(Component, Reflect, Clone, Copy, Debug)]
 #[require(Cell::Seed)]
 pub struct SeedCell;
+
+#[derive(Component, Reflect, Clone, Copy, Debug, Deref, DerefMut)]
+pub struct OrganismDepth(pub usize);
+
+#[derive(Component, Reflect, Clone, Copy, Debug, Deref, DerefMut)]
+pub struct PreviousEnergy(pub f32);
 
 #[derive(Component, Reflect, Clone, Copy, Debug)]
 pub struct EnergyTransferer;
@@ -229,6 +236,30 @@ pub struct NeighbouringCells {
 }
 
 impl NeighbouringCells {
+    pub fn new(
+        center: GridPosition,
+        facing_direction: Direction,
+        cells: &HashMap<GridPosition, Cell>,
+    ) -> Self {
+        let mut cell_array = [None; 9];
+
+        for (i, dy) in (-1..=1).enumerate() {
+            for (j, dx) in (-1..=1).enumerate() {
+                let pos = GridPosition {
+                    x: center.x.saturating_add_signed(dx),
+                    y: center.y.saturating_add_signed(dy),
+                };
+
+                cell_array[i * 3 + j] = cells.get(&pos).cloned();
+            }
+        }
+
+        NeighbouringCells {
+            cells: cell_array,
+            facing_direction,
+        }
+    }
+
     pub fn cell_in_dir(&self, relative_direction: RelativeDirection) -> Option<Cell> {
         let at = self.facing_direction.relative(relative_direction);
         let idx = match at {

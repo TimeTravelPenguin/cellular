@@ -1,11 +1,13 @@
 use std::ops::AddAssign;
 
 use bevy::{
-    app::{App, Plugin},
+    app::{App, FixedUpdate, Plugin},
     ecs::{
         entity::Entity,
         message::{MessageReader, MessageWriter},
         observer::On,
+        query::QueryData,
+        schedule::{IntoScheduleConfigs, SystemSet},
         system::{Res, Single},
     },
     platform::collections::{HashMap, HashSet},
@@ -14,30 +16,63 @@ use bevy::{
         Transform, With, Without, default, info,
     },
 };
-use bevy_rand::{global::GlobalRng, prelude::WyRand};
-use rand::RngExt;
+use bevy_rand::{global::GlobalRng, prelude::WyRand, traits::ForkableInnerSeed};
+use rand::{RngExt, SeedableRng};
 
 use crate::{
     GridPosition, SimulationSettings,
     cells::{
         AntennaCell, Cell, CellEnergy, CellEnergyTransferMessage, CellRelation, CellRenderBundle,
-        CellVisualSpec, Direction, FacingDirection, LeafCell, NewCellEvent, RootCell,
+        CellVisualSpec, Direction, FacingDirection, LeafCell, NeighbouringCells, NewCellEvent,
+        OrganismDepth, PreviousEnergy, RootCell,
     },
     energy::{
         ChargeEnergyEnvironment, EnergyEnvironmentTrait, NeighbouringEnergy,
         OrganicEnergyEnvironment,
     },
-    genes::{Genome, GenomeID, PreconditionContext},
+    genes::{Genome, GenomeID, PreconditionContext, RelativeDirection},
     input::{observe_cell_hover, observe_cell_out},
     utils::grid_pos_to_world_pos,
 };
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CellSystemsSet {
+    EnergyCollection,
+    EnergyTransfer,
+    GenomeExecution,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct CellPlugin;
 
 impl Plugin for CellPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(draw_new_cells_system);
+        app.add_observer(draw_new_cells_system)
+            .add_systems(
+                FixedUpdate,
+                (
+                    (
+                        leaf_cell_collect_energy_system,
+                        root_cell_collect_energy_system,
+                        antenna_cell_collect_energy_system,
+                    )
+                        .in_set(CellSystemsSet::EnergyCollection),
+                    (cell_pass_energy_system, cell_receive_energy_system)
+                        .chain()
+                        .in_set(CellSystemsSet::EnergyTransfer),
+                    execute_genome_system.in_set(CellSystemsSet::GenomeExecution),
+                ),
+            )
+            .configure_sets(
+                FixedUpdate,
+                (
+                    CellSystemsSet::EnergyCollection.before(CellSystemsSet::EnergyTransfer),
+                    CellSystemsSet::EnergyTransfer
+                        .after(CellSystemsSet::EnergyCollection)
+                        .before(CellSystemsSet::GenomeExecution),
+                    CellSystemsSet::GenomeExecution.after(CellSystemsSet::EnergyTransfer),
+                ),
+            );
     }
 }
 
@@ -63,7 +98,7 @@ pub fn cell_transform(grid_pos: &GridPosition, facing: Direction) -> Transform {
 }
 
 /// Inserts the necessary components to render a cell based on its visual specification.
-pub fn insert_cell_visual(
+fn insert_cell_visual(
     entity_commands: &mut EntityCommands,
     spec: CellVisualSpec,
     transform: Transform,
@@ -124,7 +159,7 @@ fn draw_new_cells_system(
         .observe(observe_cell_out);
 }
 
-pub fn leaf_cell_collect_energy_system(
+fn leaf_cell_collect_energy_system(
     mut query: Query<
         (&GridPosition, &mut CellEnergy),
         (With<LeafCell>, Without<RootCell>, Without<AntennaCell>),
@@ -177,7 +212,7 @@ pub fn leaf_cell_collect_energy_system(
     }
 }
 
-pub fn root_cell_collect_energy_system(
+fn root_cell_collect_energy_system(
     mut query: Query<
         (&GridPosition, &mut CellEnergy),
         (With<RootCell>, Without<AntennaCell>, Without<LeafCell>),
@@ -195,7 +230,7 @@ pub fn root_cell_collect_energy_system(
     }
 }
 
-pub fn antenna_cell_collect_energy_system(
+fn antenna_cell_collect_energy_system(
     mut query: Query<
         (&GridPosition, &mut CellEnergy),
         (With<AntennaCell>, Without<RootCell>, Without<LeafCell>),
@@ -213,7 +248,7 @@ pub fn antenna_cell_collect_energy_system(
     }
 }
 
-pub fn cell_pass_energy_system(
+fn cell_pass_energy_system(
     mut query: Query<(Entity, &mut CellEnergy, &CellRelation), With<CellEnergy>>,
     mut transfer_writer: MessageWriter<CellEnergyTransferMessage>,
 ) {
@@ -233,7 +268,7 @@ pub fn cell_pass_energy_system(
     }
 }
 
-pub fn cell_receive_energy_system(
+fn cell_receive_energy_system(
     mut query: Query<(Entity, &mut CellEnergy)>,
     mut transfer_reader: MessageReader<CellEnergyTransferMessage>,
 ) {
@@ -258,36 +293,102 @@ pub fn cell_receive_energy_system(
     }
 }
 
-pub fn execute_genome_system(
+#[derive(QueryData)]
+#[query_data(mutable)]
+struct GenomeExecutionQuery {
+    grid_pos: &'static GridPosition,
+    facing_dir: &'static FacingDirection,
+    cell: &'static mut Cell,
+    genome: &'static Genome,
+    genome_id: &'static mut GenomeID,
+    cell_relation: &'static CellRelation,
+    organism_depth: &'static OrganismDepth,
+    cell_energy: &'static CellEnergy,
+    previous_energy: &'static PreviousEnergy,
+}
+
+fn execute_genome_system(
     _commands: Commands,
     mut rng: Single<&mut WyRand, With<GlobalRng>>,
-    cell_positions: Query<&GridPosition, With<Cell>>,
-    mut cells: Query<(
-        &GridPosition,
-        &FacingDirection,
-        &mut Cell,
-        &Genome,
-        &mut GenomeID,
-    )>,
+    mut cells: Query<GenomeExecutionQuery>,
     organic_energy_env: Res<OrganicEnergyEnvironment>,
     charge_energy_env: Res<ChargeEnergyEnvironment>,
 ) {
-    let cell_positions: HashSet<GridPosition> = cell_positions.iter().cloned().collect();
-    for (grid_pos, facing_dir, _cell, _genome, _genome_id) in cells.iter_mut() {
-        let organic_energy = NeighbouringEnergy::new(grid_pos, facing_dir, &organic_energy_env);
-        let charge_energy = NeighbouringEnergy::new(grid_pos, facing_dir, &charge_energy_env);
+    let cell_positions: HashMap<GridPosition, Cell> = cells
+        .iter()
+        .map(|cell| (*cell.grid_pos, *cell.cell))
+        .collect();
 
+    for cell in cells.iter_mut() {
+        let neighbouring_organic_energy =
+            NeighbouringEnergy::new(cell.grid_pos, cell.facing_dir, &organic_energy_env);
+
+        let neighbouring_charge_energy =
+            NeighbouringEnergy::new(cell.grid_pos, cell.facing_dir, &charge_energy_env);
+
+        let neighbouring_cells =
+            NeighbouringCells::new(*cell.grid_pos, **cell.facing_dir, &cell_positions);
+
+        let forward_3x3_positions = cell
+            .grid_pos
+            .position_in_relative_direction(**cell.facing_dir, RelativeDirection::Forward)
+            .neighbourhood();
+
+        let left_3x3_positions = cell
+            .grid_pos
+            .position_in_relative_direction(**cell.facing_dir, RelativeDirection::Left)
+            .neighbourhood();
+
+        let right_3x3_positions = cell
+            .grid_pos
+            .position_in_relative_direction(**cell.facing_dir, RelativeDirection::Right)
+            .neighbourhood();
+
+        let unoccupied_nontoxic_3x3_forward = forward_3x3_positions
+            .iter()
+            .filter(|pos| {
+                !cell_positions.contains_key(*pos)
+                    && organic_energy_env.peek(pos.x, pos.y).unwrap_or(0.0)
+                        < organic_energy_env.toxic_threshold()
+                    && charge_energy_env.peek(pos.x, pos.y).unwrap_or(0.0)
+                        < charge_energy_env.toxic_threshold()
+            })
+            .count();
+
+        let unoccupied_nontoxic_3x3_left = left_3x3_positions
+            .iter()
+            .filter(|pos| {
+                !cell_positions.contains_key(*pos)
+                    && organic_energy_env.peek(pos.x, pos.y).unwrap_or(0.0)
+                        < organic_energy_env.toxic_threshold()
+                    && charge_energy_env.peek(pos.x, pos.y).unwrap_or(0.0)
+                        < charge_energy_env.toxic_threshold()
+            })
+            .count();
+
+        let unoccupied_nontoxic_3x3_right = right_3x3_positions
+            .iter()
+            .filter(|pos| {
+                !cell_positions.contains_key(*pos)
+                    && organic_energy_env.peek(pos.x, pos.y).unwrap_or(0.0)
+                        < organic_energy_env.toxic_threshold()
+                    && charge_energy_env.peek(pos.x, pos.y).unwrap_or(0.0)
+                        < charge_energy_env.toxic_threshold()
+            })
+            .count();
+
+        continue;
         let _precondition_context = PreconditionContext {
-            neighbouring_organic_energy: organic_energy,
-            neighbouring_charge_energy: charge_energy,
-            neighbouring_cells: todo!(),
-            unoccupied_nontoxic_3x3_forward: todo!(),
-            unoccupied_nontoxic_3x3_left: todo!(),
-            unoccupied_nontoxic_3x3_right: todo!(),
+            neighbouring_organic_energy,
+            neighbouring_charge_energy,
+            neighbouring_cells,
+            unoccupied_nontoxic_3x3_forward,
+            unoccupied_nontoxic_3x3_left,
+            unoccupied_nontoxic_3x3_right,
             organism_depth: todo!(),
             cell_energy_has_increased: todo!(),
-            has_parent: todo!(),
-            rng_value: todo!(),
+            has_parent: cell.cell_relation.parent.is_some(),
+            rng_value: rng.random(),
         };
 
         todo!();

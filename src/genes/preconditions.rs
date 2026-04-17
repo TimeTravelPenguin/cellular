@@ -158,7 +158,7 @@ impl Precondition for SpatialAwarenessCondition {
             SpatialAwarenessCondition::NearbyEdibleCells => neighbouring_cells
                 .cells
                 .iter()
-                .any(|cell| cell.map_or(false, |c| c.is_consumable())),
+                .any(|cell| cell.is_some_and(|c| c.is_consumable())),
             SpatialAwarenessCondition::Empty3Neighbourhood => {
                 let forward_empty = neighbouring_cells
                     .cell_in_dir(RelativeDirection::Forward)

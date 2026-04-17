@@ -68,6 +68,10 @@ impl NeighbouringEnergy {
         }
     }
 
+    pub fn area_energy(&self) -> &[f32; 9] {
+        &self.area_energy
+    }
+
     pub fn energy_at_center(&self) -> f32 {
         self.area_energy[4]
     }
