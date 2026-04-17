@@ -47,7 +47,8 @@ pub struct CellPlugin;
 
 impl Plugin for CellPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(draw_new_cells_system)
+        app.add_message::<CellEnergyTransferMessage>()
+            .add_observer(draw_new_cells_system)
             .add_systems(
                 FixedUpdate,
                 (
@@ -87,7 +88,7 @@ fn facing_rotation(direction: Direction) -> Quat {
 }
 
 /// Computes the world transform for a cell based on its grid position and facing direction.
-pub fn cell_transform(grid_pos: &GridPosition, facing: Direction) -> Transform {
+fn get_transform_with_rotation(grid_pos: &GridPosition, facing: Direction) -> Transform {
     let translation = grid_pos_to_world_pos(grid_pos);
 
     Transform {
@@ -136,7 +137,7 @@ fn draw_new_cells_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let transform = cell_transform(&event.grid_pos, *event.facing_direction);
+    let transform = get_transform_with_rotation(&event.grid_pos, *event.facing_direction);
     let spec = event.cell.visual_spec();
 
     info!(

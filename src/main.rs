@@ -18,13 +18,13 @@ use rand::RngExt;
 
 use crate::{
     cells::{
-        Cell, CellInfo, CellPlugin, FacingDirection, NewCellEvent, SproutCell,
+        Cell, CellInfo, CellPlugin, Direction, FacingDirection, NewCellEvent, SproutCell,
         UpdateCellInfoMessage,
     },
     cli::{Cli, Command},
     config::SimulationConfig,
     energy::{CellEnergy, ChargeEnergyEnvironment, OrganicEnergyEnvironment},
-    genes::{Genome, GenomeID},
+    genes::{Genome, GenomeID, RelativeDirection},
     input::SimulationInputPlugin,
     simulation::SimulationGrid,
 };
@@ -54,11 +54,51 @@ pub struct GridPosition {
 }
 
 impl GridPosition {
+    /// Returns a new `GridPosition` offset from the current position by the specified deltas.
     pub fn offset(&self, (dx, dy): (isize, isize)) -> Self {
         let new_x = (self.x as isize + dx).max(0) as usize;
         let new_y = (self.y as isize + dy).max(0) as usize;
 
         Self { x: new_x, y: new_y }
+    }
+
+    /// Returns the `GridPosition` one step in the specified absolute direction from the current position.
+    pub fn position_in_direction(&self, direction: Direction) -> Self {
+        let (dx, dy) = match direction {
+            Direction::North => (0, 1),
+            Direction::East => (1, 0),
+            Direction::South => (0, -1),
+            Direction::West => (-1, 0),
+        };
+
+        self.offset((dx, dy))
+    }
+
+    /// Returns the `GridPosition` one step in the direction relative to the
+    /// specified facing direction from the current position.
+    pub fn position_in_relative_direction(
+        &self,
+        facing: Direction,
+        relative: RelativeDirection,
+    ) -> Self {
+        let absolute_direction = facing.relative(relative);
+        self.position_in_direction(absolute_direction)
+    }
+
+    // Returns the valid 3x3 grid of positions centered on this position, ordered from
+    // top-left to bottom-right. Out-of-bounds positions will excluded.
+    pub fn neighbourhood(&self) -> Vec<Self> {
+        let mut neighbors = Vec::with_capacity(9);
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let new_x = self.x.saturating_add_signed(dx);
+                let new_y = self.y.saturating_add_signed(dy);
+
+                neighbors.push(Self { x: new_x, y: new_y });
+            }
+        }
+
+        neighbors
     }
 }
 
