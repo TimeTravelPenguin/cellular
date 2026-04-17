@@ -68,7 +68,7 @@ pub struct NewCellEvent {
 #[derive(Component, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct RequestDeath;
 
-#[derive(Reflect, VariantArray, Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Reflect, VariantArray, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
     North,
     East,
@@ -93,7 +93,9 @@ impl Distribution<Direction> for StandardUniform {
     }
 }
 
-#[derive(Component, Reflect, Clone, Copy, Debug, Deref, DerefMut, Serialize, Deserialize)]
+#[derive(
+    Component, Reflect, Clone, Copy, Debug, Eq, PartialEq, Deref, DerefMut, Serialize, Deserialize,
+)]
 pub struct FacingDirection(pub Direction);
 
 impl Distribution<FacingDirection> for StandardUniform {
@@ -102,9 +104,9 @@ impl Distribution<FacingDirection> for StandardUniform {
     }
 }
 
-impl FacingDirection {
+impl Direction {
     pub fn relative(&self, relative_direction: RelativeDirection) -> Direction {
-        match (self.0, relative_direction) {
+        match (*self, relative_direction) {
             (dir, RelativeDirection::Forward) => dir,
             (Direction::North, RelativeDirection::Left) => Direction::West,
             (Direction::North, RelativeDirection::Right) => Direction::East,
@@ -118,7 +120,7 @@ impl FacingDirection {
     }
 
     pub fn opposite(&self) -> Direction {
-        match self.0 {
+        match self {
             Direction::North => Direction::South,
             Direction::East => Direction::West,
             Direction::South => Direction::North,
@@ -217,6 +219,26 @@ impl Cell {
                 children: vec![],
             },
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NeighbouringCells {
+    pub cells: [Option<Cell>; 9],
+    facing_direction: Direction,
+}
+
+impl NeighbouringCells {
+    pub fn cell_in_dir(&self, relative_direction: RelativeDirection) -> Option<Cell> {
+        let at = self.facing_direction.relative(relative_direction);
+        let idx = match at {
+            Direction::North => 1,
+            Direction::East => 5,
+            Direction::South => 7,
+            Direction::West => 3,
+        };
+
+        self.cells[idx]
     }
 }
 

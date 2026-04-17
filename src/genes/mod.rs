@@ -6,20 +6,11 @@ use strum::VariantArray;
 use thiserror::Error;
 
 mod genome;
+mod preconditions;
 mod random;
 
-pub use genome::{
-    CellEnergyComparison, ChargeEnergyComparison, ChargeEnergyComparisonDiscriminants,
-    CurrentLocationResourceCondition, CurrentLocationResourceConditionDiscriminants,
-    DirectionComparison, Genome, GenomeCommandResult, GenomeEntry, GenomeID, GenomePrecondition,
-    GenomePreconditionDiscriminants, GenomeSpawn, MultiCellCommand, MultiCellCommandDiscriminants,
-    OrganicEnergyComparison, OrganicEnergyComparisonDiscriminants, OrganismDepthCondition,
-    OrganismDepthConditionDiscriminants, PoisonDetection, PoisonDetectionDiscriminants,
-    PreconditionCommands, SingleCellCommand, SoilEnergyAreaComparison,
-    SoilEnergyAreaComparisonDiscriminants, SpatialAwarenessCondition,
-    SpatialAwarenessConditionDiscriminants, UnoccupiedNonToxic3x3Comparison,
-    UnoccupiedNonToxic3x3ComparisonDiscriminants,
-};
+pub use genome::*;
+pub use preconditions::*;
 
 use crate::energy::NeighbouringEnergy;
 
@@ -50,22 +41,6 @@ impl Distribution<RelativeDirection> for StandardUniform {
             .choose(rng)
             .expect("RelativeDirection variants should not be empty")
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ObstacleInfo {
-    pub forward: bool,
-    pub left: bool,
-    pub right: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct PreconditionParameters {
-    pub organic_energy: NeighbouringEnergy,
-    pub charge_energy: NeighbouringEnergy,
-    pub cell_energy_has_increased: bool,
-    pub obstacles: ObstacleInfo,
-    pub rng_value: u8,
 }
 
 #[cfg(test)]

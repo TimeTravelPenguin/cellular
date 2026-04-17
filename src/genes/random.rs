@@ -7,7 +7,23 @@ use strum::VariantArray;
 
 use crate::{
     cells::Cell,
-    genes::{GENOME_COMMAND_PROBABILITY, GENOME_SIZE, Mutate, genome::*},
+    genes::{
+        GENOME_COMMAND_PROBABILITY, GENOME_SIZE, Mutate,
+        genome::{
+            Genome, GenomeCommandResult, GenomeEntry, GenomeID, GenomeSpawn, MultiCellCommand,
+            MultiCellCommandDiscriminants, PreconditionCommands, SingleCellCommand,
+        },
+        preconditions::{
+            CellEnergyComparison, ChargeEnergyComparison, CurrentLocationResourceCondition,
+            CurrentLocationResourceConditionDiscriminants, DirectionComparison,
+            DirectionComparisonDiscriminants, DirectionPairComparison, GenomePrecondition,
+            GenomePreconditionDiscriminants, OrganicEnergyComparison, OrganismDepthCondition,
+            OrganismDepthConditionDiscriminants, PoisonDetection, PoisonDetectionDiscriminants,
+            SoilEnergyAreaComparison, SoilEnergyAreaComparisonDiscriminants,
+            SpatialAwarenessCondition, SpatialAwarenessConditionDiscriminants,
+            UnoccupiedNonToxic3x3Comparison, UnoccupiedNonToxic3x3ComparisonDiscriminants,
+        },
+    },
 };
 
 trait SampleDiscriminant {
@@ -156,27 +172,46 @@ impl_sample_discriminant! {
     }
 }
 
-impl Distribution<DirectionComparison> for StandardUniform {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> DirectionComparison {
-        *DirectionComparison::VARIANTS
+impl Distribution<DirectionPairComparison> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> DirectionPairComparison {
+        *DirectionPairComparison::VARIANTS
             .choose(rng)
             .expect("DirectionComparison variants should not be empty")
     }
 }
 
 impl_sample_discriminant! {
-    OrganicEnergyComparisonDiscriminants => OrganicEnergyComparison, |rng| {
-        DirectionComparison(rng.random()),
+    DirectionComparisonDiscriminants => DirectionComparison, |rng| {
+        DirectionPairComparison(rng.random()),
         DirectionGreaterThanThreshold(rng.random(), rng.random_range(0.0..10.0)),
     }
 }
 
-impl_sample_discriminant! {
-    ChargeEnergyComparisonDiscriminants => ChargeEnergyComparison, |rng| {
-        DirectionComparison(rng.random()),
-        DirectionGreaterThanThreshold(rng.random(), rng.random_range(0.0..10.0)),
+impl Distribution<OrganicEnergyComparison> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> OrganicEnergyComparison {
+        OrganicEnergyComparison(rng.random())
     }
 }
+
+impl Distribution<ChargeEnergyComparison> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> ChargeEnergyComparison {
+        ChargeEnergyComparison(rng.random())
+    }
+}
+
+// impl_sample_discriminant! {
+//     OrganicEnergyComparisonDiscriminants => OrganicEnergyComparison, |rng| {
+//         DirectionComparison(rng.random()),
+//         DirectionGreaterThanThreshold(rng.random()),
+//     }
+// }
+//
+// impl_sample_discriminant! {
+//     ChargeEnergyComparisonDiscriminants => ChargeEnergyComparison, |rng| {
+//         DirectionComparison(rng.random()),
+//         DirectionGreaterThanThreshold(rng.random(), rng.random_range(0.0..10.0)),
+//     }
+// }
 
 impl_sample_discriminant! {
     UnoccupiedNonToxic3x3ComparisonDiscriminants => UnoccupiedNonToxic3x3Comparison, |rng| {

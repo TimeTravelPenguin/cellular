@@ -134,12 +134,14 @@ fn run_simulation(config: SimulationConfig) {
         config.simulation.width,
         config.simulation.height,
         config.environment.initial_organic_energy,
+        config.toxicity_thresholds.organic_toxic_threshold,
     );
 
     let charge_energy_env = ChargeEnergyEnvironment::new(
         config.simulation.width,
         config.simulation.height,
         config.environment.initial_charge_energy,
+        config.toxicity_thresholds.charge_toxic_threshold,
     );
 
     let simulation_grid = SimulationGrid::new(

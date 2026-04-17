@@ -6,6 +6,7 @@ use strum::{EnumDiscriminants, VariantArray};
 
 use crate::{
     cells::Cell,
+    genes::preconditions::*,
     genes::{GENOME_SIZE, GenomeError, RelativeDirection},
 };
 
@@ -33,120 +34,6 @@ pub struct GenomeSpawn {
     pub forward_cell_spawn: Option<Cell>,
     pub right_cell_spawn: Option<Cell>,
     pub left_cell_spawn: Option<Cell>,
-}
-
-/// Conditions related to the resources at the cell's current location.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum CurrentLocationResourceCondition {
-    OrganicAtPositionLessThan(f32),
-    OrganicAtPositionExceeds(f32),
-    ChargeAtPositionLessThan(f32),
-    ChargeAtPositionExceeds(f32),
-}
-
-/// Conditions related to the organism depth.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum OrganismDepthCondition {
-    IsEven,
-    IsOdd,
-    GreaterThan(usize),
-    LessThan(usize),
-}
-
-/// Conditions related to the change in energy of the cell since the last tick.
-#[derive(VariantArray, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum CellEnergyComparison {
-    HasIncreased,
-    HasDecreased,
-}
-
-/// Conditions related to the energy in the soil around the cell, either organic
-/// or charge energy, in a 3x3 area centered on the cell.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum SoilEnergyAreaComparison {
-    Organic3x3GreaterThanThreshold(f32),
-    Organic3x3LessThanThreshold(f32),
-    Charge3x3GreaterThanThreshold(f32),
-    Charge3x3LessThanThreshold(f32),
-    Organic3x3GreaterThanCharge3x3,
-    Organic3x3LessThanCharge3x3,
-}
-
-/// Conditions related to the cell's awareness of its surroundings.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum SpatialAwarenessCondition {
-    NearbyEdibleCells,
-    /// Checks if the forward, left, and right neighbouring cells are all unoccupied.
-    Empty3Neighbourhood,
-    EmptyRelativeDirection(RelativeDirection),
-    ObstacleInDirection(RelativeDirection),
-    HasParent,
-}
-
-/// Conditions comparing the energy in the soil in a specific directions.
-#[derive(VariantArray, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum DirectionComparison {
-    CenterGreaterThanLeft,
-    CenterGreaterThanRight,
-    LeftGreaterThanCenter,
-    LeftGreaterThanRight,
-    RightGreaterThanCenter,
-    RightGreaterThanLeft,
-}
-
-/// Conditions comparing the energy in the soil in a specific direction to a threshold value.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum OrganicEnergyComparison {
-    DirectionComparison(DirectionComparison),
-    DirectionGreaterThanThreshold(RelativeDirection, f32),
-}
-
-/// Conditions comparing the energy in the soil in a specific direction to a threshold value.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum ChargeEnergyComparison {
-    DirectionComparison(DirectionComparison),
-    DirectionGreaterThanThreshold(RelativeDirection, f32),
-}
-
-/// Conditions comparing the presence of free space and non-toxic soil of the
-/// 3x3 region in a specific direction to a threshold value.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum UnoccupiedNonToxic3x3Comparison {
-    DirectionComparison3x3(DirectionComparison),
-    Direction3x3GreaterThanThreshold(RelativeDirection, usize),
-}
-
-/// Conditions related to the detecting toxic energy levels in the soil.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum PoisonDetection {
-    Organic(RelativeDirection),
-    Charge(RelativeDirection),
-    Any(RelativeDirection),
-}
-
-/// Preconditions that are checked before executing a genome command.
-#[derive(EnumDiscriminants, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[strum_discriminants(derive(VariantArray))]
-pub enum GenomePrecondition {
-    CurrentLocationResourceCondition(CurrentLocationResourceCondition),
-    OrganismDepthCondition(OrganismDepthCondition),
-    CellEnergyComparison(CellEnergyComparison),
-    SoilEnergyAreaComparison(SoilEnergyAreaComparison),
-    SpatialAwarenessCondition(SpatialAwarenessCondition),
-    RandomGreaterThan(u8),
-    LightEnergyComparison(DirectionComparison),
-    OrganicEnergyComparison(OrganicEnergyComparison),
-    ChargeEnergyComparison(ChargeEnergyComparison),
-    FreeSpaceComparison(UnoccupiedNonToxic3x3Comparison),
-    PoisonDetection(PoisonDetection),
 }
 
 /// Commands that a Sprout with a parent can execute.

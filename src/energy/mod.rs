@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use bevy::{
     ecs::{component::Component, resource::Resource},
     prelude::{Deref, DerefMut},
@@ -5,7 +7,11 @@ use bevy::{
 };
 use itertools::Itertools;
 
-use crate::{GridPosition, cells::FacingDirection};
+use crate::{
+    GridPosition,
+    cells::{Direction, FacingDirection},
+    genes::RelativeDirection,
+};
 
 mod systems;
 
@@ -28,44 +34,62 @@ pub enum Energy {
     Charge,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NeighbouringEnergy {
-    pub forward: f32,
-    pub left: f32,
-    pub right: f32,
-    pub center: f32,
-    pub total3x3: f32,
+    area_energy: [f32; 9],
+    facing_direction: Direction,
+    toxic_threshold: f32,
+    sum: OnceLock<f32>,
 }
 
 impl NeighbouringEnergy {
-    pub fn new(
-        pos: &GridPosition,
-        facing: &FacingDirection,
-        energy_env: &EnergyEnvironment,
-    ) -> Self {
-        let forward_pos = pos.offset(facing.0.delta());
-        let left_pos = pos.offset(facing.left().delta());
-        let right_pos = pos.offset(facing.right().delta());
+    pub fn new(pos: &GridPosition, facing: &Direction, energy_env: &EnergyEnvironment) -> Self {
+        let area_energy = (-1..=1)
+            .cartesian_product(-1..=1)
+            .map(|(dx, dy)| {
+                let x = pos.x as isize + dx;
+                let y = pos.y as isize + dy;
 
-        let forward = energy_env.peek(forward_pos.x, forward_pos.y).unwrap_or(0.0);
-        let left = energy_env.peek(left_pos.x, left_pos.y).unwrap_or(0.0);
-        let right = energy_env.peek(right_pos.x, right_pos.y).unwrap_or(0.0);
-        let center = energy_env.peek(pos.x, pos.y).unwrap_or(0.0);
-
-        let tiles3x3 = (-1..=1).cartesian_product(-1..=1).map(|(dx, dy)| {
-            let neighbour_pos = pos.offset((dx, dy));
-            energy_env
-                .peek(neighbour_pos.x, neighbour_pos.y)
-                .unwrap_or(0.0)
-        });
+                if x >= 0 && y >= 0 {
+                    energy_env.peek(x as usize, y as usize).unwrap_or(0.0)
+                } else {
+                    0.0
+                }
+            })
+            .collect_vec()
+            .try_into()
+            .expect("Exactly 9 energy values should be collected for the 3x3 area");
 
         NeighbouringEnergy {
-            forward,
-            left,
-            right,
-            center,
-            total3x3: tiles3x3.sum(),
+            area_energy,
+            facing_direction: *facing,
+            sum: OnceLock::new(),
+            toxic_threshold: energy_env.toxic_threshold(),
         }
+    }
+
+    pub fn energy_at_center(&self) -> f32 {
+        self.area_energy[4]
+    }
+
+    pub fn energy_in_dir(&self, relative_direction: RelativeDirection) -> f32 {
+        let at = self.facing_direction.relative(relative_direction);
+        let idx = match at {
+            Direction::North => 1,
+            Direction::East => 5,
+            Direction::South => 7,
+            Direction::West => 3,
+        };
+
+        self.area_energy[idx]
+    }
+
+    pub fn total_energy(&self) -> f32 {
+        *self.sum.get_or_init(|| self.area_energy.iter().sum())
+    }
+
+    pub fn is_toxic_in_dir(&self, relative_direction: RelativeDirection) -> bool {
+        self.energy_in_dir(relative_direction) >= self.toxic_threshold
     }
 }
 
@@ -73,8 +97,13 @@ impl NeighbouringEnergy {
 pub struct OrganicEnergyEnvironment(pub EnergyEnvironment);
 
 impl OrganicEnergyEnvironment {
-    pub fn new(width: usize, height: usize, initial_energy: f32) -> Self {
-        OrganicEnergyEnvironment(EnergyEnvironment::new(width, height, initial_energy))
+    pub fn new(width: usize, height: usize, initial_energy: f32, toxic_threshold: f32) -> Self {
+        OrganicEnergyEnvironment(EnergyEnvironment::new(
+            width,
+            height,
+            initial_energy,
+            toxic_threshold,
+        ))
     }
 }
 
@@ -82,8 +111,13 @@ impl OrganicEnergyEnvironment {
 pub struct ChargeEnergyEnvironment(pub EnergyEnvironment);
 
 impl ChargeEnergyEnvironment {
-    pub fn new(width: usize, height: usize, initial_energy: f32) -> Self {
-        ChargeEnergyEnvironment(EnergyEnvironment::new(width, height, initial_energy))
+    pub fn new(width: usize, height: usize, initial_energy: f32, toxic_threshold: f32) -> Self {
+        ChargeEnergyEnvironment(EnergyEnvironment::new(
+            width,
+            height,
+            initial_energy,
+            toxic_threshold,
+        ))
     }
 }
 
@@ -92,15 +126,21 @@ pub struct EnergyEnvironment {
     width: usize,
     height: usize,
     energy: Vec<f32>,
+    toxic_threshold: f32,
 }
 
 impl EnergyEnvironment {
-    pub fn new(width: usize, height: usize, initial_energy: f32) -> Self {
+    pub fn new(width: usize, height: usize, initial_energy: f32, toxic_threshold: f32) -> Self {
         EnergyEnvironment {
             width,
             height,
             energy: vec![initial_energy; width * height],
+            toxic_threshold,
         }
+    }
+
+    pub fn toxic_threshold(&self) -> f32 {
+        self.toxic_threshold
     }
 }
 
