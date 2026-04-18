@@ -77,87 +77,43 @@ impl Plugin for CellPlugin {
     }
 }
 
-/// Computes the rotation needed to orient a cell in the specified facing direction.
-fn facing_rotation(direction: Direction) -> Quat {
-    match direction {
-        Direction::East => Quat::IDENTITY,
-        Direction::South => Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2),
-        Direction::West => Quat::from_rotation_z(std::f32::consts::PI),
-        Direction::North => Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
-    }
-}
-
-/// Computes the world transform for a cell based on its grid position and facing direction.
-fn get_transform_with_rotation(grid_pos: &GridPosition, facing: Direction) -> Transform {
-    let translation = grid_pos_to_world_pos(grid_pos);
-
-    Transform {
-        translation,
-        rotation: facing_rotation(facing),
-        ..default()
-    }
-}
-
-/// Inserts the necessary components to render a cell based on its visual specification.
-fn insert_cell_visual(
-    entity_commands: &mut EntityCommands,
-    spec: CellVisualSpec,
-    transform: Transform,
+pub fn spawn_cell(
+    commands: &mut Commands,
     grid_pos: GridPosition,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
-) {
-    let mesh = spec.shape.into_mesh(meshes);
-    let material = MeshMaterial2d(materials.add(ColorMaterial::from_color(spec.color)));
-
-    entity_commands.insert((
-        CellRenderBundle {
-            mesh,
-            material,
-            transform,
-        },
-        grid_pos,
-    ));
-
-    entity_commands.with_children(|parent| {
-        for child in spec.children {
-            parent.spawn(CellRenderBundle {
-                mesh: child.shape.into_mesh(meshes),
-                material: MeshMaterial2d(materials.add(ColorMaterial::from_color(child.color))),
-                transform: child.transform,
-            });
-        }
-    });
-}
-
-/// System to create visual entities for cells that don't already have them.
-fn draw_new_cells_system(
-    event: On<NewCellEvent>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    let transform = get_transform_with_rotation(&event.grid_pos, *event.facing_direction);
-    let spec = event.cell.visual_spec();
-
+    facing_direction: FacingDirection,
+    cell: Cell,
+    cell_energy: CellEnergy,
+    genome: Genome,
+    genome_id: GenomeID,
+    cell_relation: CellRelation,
+    organism_depth: OrganismDepth,
+    remaining_ticks_without_energy: RemainingTicksWithoutEnergy,
+) -> Entity {
     info!(
         "Spawning cell at ({}, {}) of type {:?}",
-        event.grid_pos.x, event.grid_pos.y, event.cell,
+        grid_pos.x, grid_pos.y, cell,
     );
 
-    let mut entity_commands = commands.entity(event.entity);
-    insert_cell_visual(
-        &mut entity_commands,
-        spec,
-        transform,
-        event.grid_pos,
-        &mut meshes,
-        &mut materials,
-    );
-
-    entity_commands
-        .observe(observe_cell_hover)
-        .observe(observe_cell_out);
+    commands
+        .spawn((
+            grid_pos,
+            facing_direction,
+            cell,
+            genome,
+            genome_id,
+            cell_relation,
+            organism_depth,
+            cell_energy,
+            PreviousEnergy(*cell_energy),
+            remaining_ticks_without_energy,
+        ))
+        .trigger(|entity| NewCellEvent {
+            entity,
+            grid_pos,
+            cell,
+            facing_direction,
+        })
+        .id()
 }
 
 fn leaf_cell_collect_energy_system(

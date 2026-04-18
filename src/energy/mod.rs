@@ -7,11 +7,7 @@ use bevy::{
 };
 use itertools::Itertools;
 
-use crate::{
-    GridPosition,
-    cells::{Direction, FacingDirection},
-    genes::RelativeDirection,
-};
+use crate::{GridPosition, cells::Direction, genes::RelativeDirection};
 
 mod systems;
 

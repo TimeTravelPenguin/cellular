@@ -39,10 +39,6 @@ mod simulation;
 mod utils;
 
 const TILE_SIZE: f32 = 10.0;
-const CELL_GREEN: Color = Color::linear_rgb(23.0 / 255.0, 185.0 / 255.0, 0.0 / 255.0);
-const CELL_ORANGE: Color = Color::linear_rgb(235.0 / 255.0, 138.0 / 255.0, 64.0 / 255.0);
-const CELL_BLUE: Color = Color::linear_rgb(82.0 / 255.0, 107.0 / 255.0, 1.0);
-const CELL_BROWN: Color = Color::linear_rgb(30.0 / 255.0, 20.0 / 255.0, 10.0 / 255.0);
 
 #[derive(Resource, Reflect, Clone, Copy, Debug, Default, PartialEq, Eq, Deref, DerefMut)]
 pub struct SimulationStep(pub usize);
@@ -309,21 +305,22 @@ fn initialize_sprouts_system(
 
     for &(x, y) in &positions {
         let facing_direction = rng.random::<FacingDirection>();
-        commands
-            .spawn((
-                SproutCell,
-                CellEnergy(10.0),
-                facing_direction,
-                GridPosition { x, y },
-                rng.random::<GenomeID>(),
-                genome.clone(),
-            ))
-            .trigger(|entity| NewCellEvent {
-                entity,
-                grid_pos: GridPosition { x, y },
-                cell: Cell::Sprout,
-                facing_direction,
-            });
+        let genome_id = rng.random::<GenomeID>();
+        _ = spawn_cell(
+            &mut commands,
+            GridPosition { x, y },
+            facing_direction,
+            Cell::Sprout,
+            CellEnergy(initial_energy),
+            genome.clone(),
+            genome_id,
+            cells::CellRelation {
+                parent: None,
+                children: HashSet::new(),
+            },
+            OrganismDepth(0),
+            RemainingTicksWithoutEnergy(settings.config.cell_defaults.max_ticks_without_energy),
+        )
     }
 }
 

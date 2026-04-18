@@ -1,10 +1,9 @@
+use std::fmt::Debug;
+
 use bevy::{
-    ecs::{event::EntityEvent, query::QueryData},
-    platform::collections::HashMap,
-    prelude::{
-        Assets, Bundle, Circle, Color, ColorMaterial, Component, Deref, DerefMut, Ellipse, Entity,
-        Mesh, Mesh2d, MeshMaterial2d, Message, Rectangle, Reflect, Transform, Vec, Vec3, vec,
-    },
+    ecs::query::QueryData,
+    platform::collections::{HashMap, HashSet},
+    prelude::{Component, Deref, DerefMut, Entity, EntityEvent, Message, Reflect},
 };
 use rand::{
     RngExt,
@@ -16,14 +15,19 @@ use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
 use crate::{
-    CELL_BLUE, CELL_BROWN, CELL_GREEN, CELL_ORANGE, GridPosition, TILE_SIZE,
+    GridPosition,
     energy::CellEnergy,
     genes::{Genome, GenomeID, RelativeDirection},
 };
 
+mod render;
+mod spawn;
 mod systems;
 
 pub use self::systems::*;
+
+#[derive(Component, Reflect, Clone, Copy, Debug, Deref, DerefMut)]
+pub struct RemainingTicksWithoutEnergy(pub u32);
 
 #[derive(Component, Reflect, Default, Clone, Copy, Debug)]
 pub struct ProducerCell;
@@ -72,8 +76,10 @@ pub struct NewCellEvent {
     pub facing_direction: FacingDirection,
 }
 
-#[derive(Component, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct RequestDeath;
+#[derive(Message, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct RequestDeathMessage {
+    pub entity: Entity,
+}
 
 #[derive(Reflect, VariantArray, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
@@ -160,76 +166,11 @@ pub enum Cell {
 
 impl Cell {
     pub fn is_consumable(&self) -> bool {
-        matches!(self, Cell::Seed | Cell::Leaf | Cell::Sprout)
-    }
-
-    /// Returns the visual specification for this cell type, including its
-    /// shape, color, and any child visuals.
-    pub fn visual_spec(&self) -> CellVisualSpec {
-        match self {
-            Cell::Leaf => CellVisualSpec {
-                shape: ShapeSpec::Ellipse {
-                    half_width: TILE_SIZE / 1.75,
-                    half_height: TILE_SIZE / 3.0,
-                },
-                color: CELL_GREEN,
-                children: vec![],
-            },
-            Cell::Antenna => CellVisualSpec {
-                shape: ShapeSpec::Circle(TILE_SIZE / 3.0),
-                color: CELL_BLUE,
-                children: vec![],
-            },
-            Cell::Root => CellVisualSpec {
-                shape: ShapeSpec::Rect {
-                    width: TILE_SIZE / 1.5,
-                    height: TILE_SIZE / 1.5,
-                },
-                color: CELL_ORANGE,
-                children: vec![],
-            },
-            Cell::Sprout => CellVisualSpec {
-                shape: ShapeSpec::Circle(TILE_SIZE / 3.0),
-                color: Color::WHITE,
-                children: vec![
-                    ChildVisualSpec {
-                        shape: ShapeSpec::Circle(TILE_SIZE / 15.0),
-                        color: Color::BLACK,
-                        transform: Transform::from_translation(Vec3::new(
-                            TILE_SIZE / 6.0,
-                            TILE_SIZE / 6.0,
-                            2.0,
-                        )),
-                    },
-                    ChildVisualSpec {
-                        shape: ShapeSpec::Circle(TILE_SIZE / 15.0),
-                        color: Color::BLACK,
-                        transform: Transform::from_translation(Vec3::new(
-                            TILE_SIZE / 6.0,
-                            -TILE_SIZE / 6.0,
-                            2.0,
-                        )),
-                    },
-                ],
-            },
-            Cell::Branch => CellVisualSpec {
-                shape: ShapeSpec::Rect {
-                    width: TILE_SIZE * 1.5,
-                    height: TILE_SIZE / 6.0,
-                },
-                color: CELL_BROWN,
-                children: vec![],
-            },
-            Cell::Seed => CellVisualSpec {
-                shape: ShapeSpec::Circle(TILE_SIZE / 6.0),
-                color: Color::WHITE,
-                children: vec![],
-            },
-        }
+        matches!(self, Cell::Leaf | Cell::Antenna | Cell::Root)
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct NeighbouringCells {
     pub cells: [Option<Cell>; 9],
     facing_direction: Direction,
@@ -273,52 +214,6 @@ impl NeighbouringCells {
     }
 }
 
-/// Bundle for rendering a cell.
-#[derive(Bundle)]
-pub struct CellRenderBundle {
-    mesh: Mesh2d,
-    material: MeshMaterial2d<ColorMaterial>,
-    transform: Transform,
-}
-
-#[derive(Clone, Copy, Debug)]
-enum ShapeSpec {
-    Circle(f32),
-    Ellipse { half_width: f32, half_height: f32 },
-    Rect { width: f32, height: f32 },
-}
-
-impl ShapeSpec {
-    pub fn into_mesh(self, meshes: &mut Assets<Mesh>) -> Mesh2d {
-        let handle = match self {
-            ShapeSpec::Circle(r) => meshes.add(Circle::new(r)),
-            ShapeSpec::Ellipse {
-                half_width,
-                half_height,
-            } => meshes.add(Ellipse::new(half_width, half_height)),
-            ShapeSpec::Rect { width, height } => meshes.add(Rectangle::new(width, height)),
-        };
-
-        Mesh2d(handle)
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct ChildVisualSpec {
-    shape: ShapeSpec,
-    color: Color,
-    transform: Transform,
-}
-
-/// Visual specification for a cell, including its shape, color, and any child
-/// visuals (e.g., for details like eyes).
-#[derive(Clone, Debug)]
-pub struct CellVisualSpec {
-    shape: ShapeSpec,
-    color: Color,
-    children: Vec<ChildVisualSpec>,
-}
-
 #[derive(Message, Clone, Debug)]
 pub struct SpawnChildCellMessage {
     pub parent: Entity,
@@ -329,7 +224,7 @@ pub struct SpawnChildCellMessage {
 #[derive(Component, Reflect, Clone, Debug)]
 pub struct CellRelation {
     pub parent: Option<Entity>,
-    pub children: Vec<Entity>,
+    pub children: HashSet<Entity>,
 }
 
 #[derive(Message)]
@@ -339,10 +234,11 @@ pub struct UpdateCellInfoMessage {
 
 #[derive(QueryData)]
 pub struct CellInfo {
+    pub cell: &'static Cell,
     pub position: &'static GridPosition,
-    pub cell_type: &'static Cell,
     pub energy: &'static CellEnergy,
     pub facing: &'static FacingDirection,
+    pub genome: &'static Genome,
     pub genome_id: &'static GenomeID,
 }
 
@@ -351,4 +247,10 @@ pub struct CellEnergyTransferMessage {
     pub from: Entity,
     pub to: Entity,
     pub amount: f32,
+}
+
+#[derive(Message, Clone, Debug)]
+pub struct RemoveChildCellMessage {
+    pub parent: Entity,
+    pub child: Entity,
 }

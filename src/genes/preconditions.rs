@@ -3,10 +3,7 @@
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, VariantArray};
 
-use crate::{
-    cells::{Cell, NeighbouringCells},
-    genes::*,
-};
+use crate::{cells::NeighbouringCells, genes::*};
 
 #[derive(Clone, Debug)]
 pub struct PreconditionContext {
