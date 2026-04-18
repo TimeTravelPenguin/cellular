@@ -8,8 +8,9 @@ bevy = { version = "0.18.1", features = ["bevy_dev_tools", "dynamic_linking"] }
 bevy-inspector-egui = "0.36.0"
 bevy_egui = "0.39.1"
 bevy_rand = { version = "0.14.2", features = ["chacha20", "wyrand"] }
+catppuccin = "2.7.0"
 clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
-either = { version = "1.15.0", features = ["serde"] }
+derive_setters = "0.1.9"
 itertools = "0.14.0"
 log = { version = "*", features = [
   "max_level_debug",
