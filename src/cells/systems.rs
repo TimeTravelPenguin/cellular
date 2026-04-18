@@ -1,7 +1,7 @@
 use std::ops::AddAssign;
 
 use bevy::{
-    app::{App, FixedUpdate, Plugin},
+    app::{App, FixedPostUpdate, FixedUpdate, Plugin},
     ecs::{
         entity::Entity,
         message::{MessageReader, MessageWriter},
@@ -11,28 +11,24 @@ use bevy::{
         system::{Res, Single},
     },
     platform::collections::{HashMap, HashSet},
-    prelude::{
-        Assets, ColorMaterial, Commands, EntityCommands, Mesh, MeshMaterial2d, Quat, Query, ResMut,
-        Transform, With, Without, default, info,
-    },
+    prelude::{Commands, Query, ResMut, With, Without, info},
 };
-use bevy_rand::{global::GlobalRng, prelude::WyRand, traits::ForkableInnerSeed};
-use rand::{RngExt, SeedableRng};
+use bevy_rand::{global::GlobalRng, prelude::WyRand};
+use rand::RngExt;
 
 use crate::{
     GridPosition, SimulationSettings,
     cells::{
-        AntennaCell, Cell, CellEnergy, CellEnergyTransferMessage, CellRelation, CellRenderBundle,
-        CellVisualSpec, Direction, FacingDirection, LeafCell, NeighbouringCells, NewCellEvent,
-        OrganismDepth, PreviousEnergy, RootCell,
+        render::{DrawCellEvent, draw_new_cells_system},
+        *,
     },
     energy::{
         ChargeEnergyEnvironment, EnergyEnvironmentTrait, NeighbouringEnergy,
         OrganicEnergyEnvironment,
     },
-    genes::{Genome, GenomeID, PreconditionContext, RelativeDirection},
-    input::{observe_cell_hover, observe_cell_out},
-    utils::grid_pos_to_world_pos,
+    genes::{
+        Genome, GenomeID, PreconditionContext, PreconditionEvaluationResult, RelativeDirection,
+    },
 };
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -48,6 +44,11 @@ pub struct CellPlugin;
 impl Plugin for CellPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<CellEnergyTransferMessage>()
+            .add_message::<RequestDeathMessage>()
+            .add_message::<RemoveChildCellMessage>()
+            .add_observer(|event: On<NewCellEvent>, mut commands: Commands| {
+                commands.entity(event.entity).trigger(DrawCellEvent);
+            })
             .add_observer(draw_new_cells_system)
             .add_systems(
                 FixedUpdate,
@@ -63,6 +64,15 @@ impl Plugin for CellPlugin {
                         .in_set(CellSystemsSet::EnergyTransfer),
                     execute_genome_system.in_set(CellSystemsSet::GenomeExecution),
                 ),
+            )
+            .add_systems(
+                FixedPostUpdate,
+                (
+                    apply_living_cost_system,
+                    update_previous_energy_system,
+                    handle_cell_death_system,
+                )
+                    .chain(),
             )
             .configure_sets(
                 FixedUpdate,
@@ -250,38 +260,58 @@ fn cell_receive_energy_system(
     }
 }
 
+fn update_previous_energy_system(mut query: Query<(&mut PreviousEnergy, &CellEnergy), With<Cell>>) {
+    for (mut previous_energy, energy) in query.iter_mut() {
+        previous_energy.0 = energy.0;
+    }
+}
+
+fn has_enough_energy_for_spawn(
+    cell_energy: CellEnergy,
+    spawn: &[Cell],
+    settings: &SimulationSettings,
+) -> bool {
+    let total_cost = settings.config.cell_action_costs.reproduce_cost * spawn.len() as f32;
+
+    cell_energy.0 >= total_cost
+}
+
 #[derive(QueryData)]
 #[query_data(mutable)]
 struct GenomeExecutionQuery {
+    entity: Entity,
     grid_pos: &'static GridPosition,
-    facing_dir: &'static FacingDirection,
+    facing_dir: &'static mut FacingDirection,
     cell: &'static mut Cell,
     genome: &'static Genome,
     genome_id: &'static mut GenomeID,
-    cell_relation: &'static CellRelation,
+    cell_relation: &'static mut CellRelation,
     organism_depth: &'static OrganismDepth,
-    cell_energy: &'static CellEnergy,
+    cell_energy: &'static mut CellEnergy,
     previous_energy: &'static PreviousEnergy,
 }
 
 fn execute_genome_system(
-    _commands: Commands,
+    mut commands: Commands,
     mut rng: Single<&mut WyRand, With<GlobalRng>>,
     mut cells: Query<GenomeExecutionQuery>,
     organic_energy_env: Res<OrganicEnergyEnvironment>,
     charge_energy_env: Res<ChargeEnergyEnvironment>,
+    simulation_settings: Res<SimulationSettings>,
 ) {
     let cell_positions: HashMap<GridPosition, Cell> = cells
         .iter()
         .map(|cell| (*cell.grid_pos, *cell.cell))
         .collect();
 
-    for cell in cells.iter_mut() {
+    info!("Executing genome for {} cells", cells.iter().count());
+
+    for mut cell in cells.iter_mut() {
         let neighbouring_organic_energy =
-            NeighbouringEnergy::new(cell.grid_pos, cell.facing_dir, &organic_energy_env);
+            NeighbouringEnergy::new(cell.grid_pos, &cell.facing_dir, &organic_energy_env);
 
         let neighbouring_charge_energy =
-            NeighbouringEnergy::new(cell.grid_pos, cell.facing_dir, &charge_energy_env);
+            NeighbouringEnergy::new(cell.grid_pos, &cell.facing_dir, &charge_energy_env);
 
         let neighbouring_cells =
             NeighbouringCells::new(*cell.grid_pos, **cell.facing_dir, &cell_positions);
@@ -334,20 +364,189 @@ fn execute_genome_system(
             })
             .count();
 
-        continue;
-        let _precondition_context = PreconditionContext {
+        let precondition_context = PreconditionContext {
             neighbouring_organic_energy,
             neighbouring_charge_energy,
             neighbouring_cells,
             unoccupied_nontoxic_3x3_forward,
             unoccupied_nontoxic_3x3_left,
             unoccupied_nontoxic_3x3_right,
-            organism_depth: todo!(),
-            cell_energy_has_increased: todo!(),
+            organism_depth: **cell.organism_depth,
+            cell_energy_has_increased: **cell.cell_energy > **cell.previous_energy,
             has_parent: cell.cell_relation.parent.is_some(),
             rng_value: rng.random(),
         };
 
-        todo!();
+        let genome = cell.genome;
+        let genome_id = cell.genome_id;
+
+        let _precondition_result = genome.eval_preconditions(*genome_id, &precondition_context);
+        let is_multicellular = cell.cell_relation.parent.is_some();
+
+        let precondition_result = PreconditionEvaluationResult::Unset; // TEMP
+
+        match precondition_result {
+            PreconditionEvaluationResult::Unset => {
+                let entry = genome.get_entry(*genome_id);
+                let spawned = entry.spawn.into_iter().collect::<Vec<_>>();
+
+                if spawned.is_empty()
+                    || !has_enough_energy_for_spawn(
+                        *cell.cell_energy,
+                        &spawned,
+                        &simulation_settings,
+                    )
+                {
+                    return; // Not enough energy to spawn or no spawn defined
+                }
+
+                let energies = **cell.cell_energy / spawned.len() as f32;
+
+                for spawned_cell in &spawned {
+                    let entity = spawn_cell(
+                        &mut commands,
+                        *cell.grid_pos,
+                        *cell.facing_dir,
+                        *spawned_cell,
+                        CellEnergy(energies),
+                        genome.clone(),
+                        *genome_id,
+                        CellRelation {
+                            parent: Some(cell.entity),
+                            children: HashSet::new(),
+                        },
+                        OrganismDepth(**cell.organism_depth + 1),
+                        RemainingTicksWithoutEnergy(
+                            simulation_settings
+                                .config
+                                .cell_defaults
+                                .max_ticks_without_energy,
+                        ),
+                    );
+
+                    cell.cell_relation.children.insert(entity);
+                }
+
+                **cell.cell_energy = 0.0;
+                *cell.cell = Cell::Branch;
+
+                commands.entity(cell.entity).trigger(DrawCellEvent);
+            }
+            PreconditionEvaluationResult::Met => {
+                let entry = genome.get_entry(*genome_id);
+                if is_multicellular {
+                    let command = &entry.multi_cell_commands.preconditions_met_command;
+                    todo!(
+                        "Execute multi-cell command for met preconditions: {:?}",
+                        command
+                    );
+                } else {
+                    let command = &entry.single_cell_commands.preconditions_met_command;
+                    todo!(
+                        "Execute single-cell command for met preconditions: {:?}",
+                        command
+                    );
+                }
+            }
+            PreconditionEvaluationResult::Unmet => {
+                let entry = genome.get_entry(*genome_id);
+                if is_multicellular {
+                    let command = &entry.multi_cell_commands.preconditions_unmet_command;
+                    todo!(
+                        "Execute multi-cell command for unmet preconditions: {:?}",
+                        command
+                    );
+                } else {
+                    let command = &entry.single_cell_commands.preconditions_unmet_command;
+                    todo!(
+                        "Execute single-cell command for unmet preconditions: {:?}",
+                        command
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn apply_living_cost_system(
+    mut query: Query<(
+        Entity,
+        &mut CellEnergy,
+        &Cell,
+        &mut RemainingTicksWithoutEnergy,
+    )>,
+    settings: Res<SimulationSettings>,
+    mut writer: MessageWriter<RequestDeathMessage>,
+) {
+    info!("Applying living costs for {} cells", query.iter().count());
+
+    for (entity, mut energy, cell, mut remaining) in query.iter_mut() {
+        let cost = match *cell {
+            Cell::Leaf => settings.config.cell_living_costs.leaf_living_cost,
+            Cell::Root => settings.config.cell_living_costs.root_living_cost,
+            Cell::Antenna => settings.config.cell_living_costs.antenna_living_cost,
+            Cell::Branch => settings.config.cell_living_costs.branch_living_cost,
+            Cell::Sprout => settings.config.cell_living_costs.sprout_living_cost,
+            Cell::Seed => settings.config.cell_living_costs.seed_living_cost,
+        };
+
+        **energy = (**energy - cost).max(0.0);
+
+        if **energy <= 0.0 {
+            if **remaining == 0 {
+                writer.write(RequestDeathMessage { entity });
+            } else {
+                **remaining -= 1;
+            }
+        }
+    }
+}
+
+fn handle_cell_death_system(
+    mut commands: Commands,
+    query: Query<(&Cell, &GridPosition, &CellRelation, &CellEnergy)>,
+    mut organic_env: ResMut<OrganicEnergyEnvironment>,
+    mut charge_env: ResMut<ChargeEnergyEnvironment>,
+    settings: Res<SimulationSettings>,
+    mut reader: MessageReader<RequestDeathMessage>,
+    mut writer: MessageWriter<RemoveChildCellMessage>,
+) {
+    for msg in reader.read() {
+        let Ok((cell, pos, relation, energy)) = query.get(msg.entity) else {
+            continue;
+        };
+
+        relation.children.iter().for_each(|&child| {
+            writer.write(RemoveChildCellMessage {
+                parent: msg.entity,
+                child,
+            });
+        });
+
+        if let Some(parent) = relation.parent {
+            writer.write(RemoveChildCellMessage {
+                parent,
+                child: msg.entity,
+            });
+        }
+
+        let death_energy_config = &settings.config.cell_death_energy_redistribution;
+        let organic_released = match cell {
+            Cell::Leaf => death_energy_config.leaf_organic_death_energy,
+            Cell::Root => death_energy_config.root_organic_death_energy,
+            Cell::Antenna => death_energy_config.antenna_organic_death_energy,
+            Cell::Branch => death_energy_config.branch_organic_death_energy,
+            Cell::Sprout => death_energy_config.sprout_organic_death_energy,
+            Cell::Seed => death_energy_config.seed_organic_death_energy,
+        };
+
+        organic_env.add(pos.x, pos.y, organic_released);
+
+        let remaining_energy = **energy - organic_released;
+        if remaining_energy > 0.0 {
+            charge_env.add(pos.x, pos.y, remaining_energy);
+        }
+
+        commands.entity(msg.entity).despawn();
     }
 }

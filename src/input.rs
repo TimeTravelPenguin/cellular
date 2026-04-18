@@ -6,7 +6,8 @@ use bevy::{
 
 use crate::{
     Grid, SimulationSettings, SimulationState, SimulationView, ToggleGridVisible,
-    UpdateCellInfoMessage, cells::Cell,
+    UpdateCellInfoMessage,
+    cells::{Cell, NewCellEvent},
 };
 
 #[derive(Message)]
@@ -24,7 +25,13 @@ impl Plugin for SimulationInputPlugin {
                     pause_system,
                 ),
             )
-            .add_systems(Update, (move_camera_system, process_keyboard_system));
+            .add_systems(Update, (move_camera_system, process_keyboard_system))
+            .add_observer(|event: On<NewCellEvent>, mut commands: Commands| {
+                commands
+                    .entity(event.entity)
+                    .observe(observe_cell_hover)
+                    .observe(observe_cell_out);
+            });
     }
 }
 

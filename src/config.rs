@@ -12,6 +12,8 @@ pub struct SimulationParameters {
     pub tick_rate: u32,
     /// Initial number of Sprout cells in the simulation
     pub initial_sprout_count: usize,
+    /// Initial energy for Sprout cells at the start of the simulation
+    pub initial_sprout_energy: f32,
 }
 
 impl Default for SimulationParameters {
@@ -22,6 +24,7 @@ impl Default for SimulationParameters {
             tick_rate: 10,
             // Start with 10% of the grid filled with Sprout cells
             initial_sprout_count: 100 * 100 / 10,
+            initial_sprout_energy: 128.0,
         }
     }
 }

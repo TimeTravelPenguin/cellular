@@ -18,8 +18,8 @@ use rand::RngExt;
 
 use crate::{
     cells::{
-        Cell, CellInfo, CellPlugin, Direction, FacingDirection, NewCellEvent, SproutCell,
-        UpdateCellInfoMessage,
+        Cell, CellInfo, CellPlugin, Direction, FacingDirection, OrganismDepth,
+        RemainingTicksWithoutEnergy, UpdateCellInfoMessage, spawn_cell,
     },
     cli::{Cli, Command},
     config::SimulationConfig,
@@ -275,10 +275,19 @@ fn cell_info_ui_system(
                 "Position: ({}, {})",
                 cell_info.position.x, cell_info.position.y
             ));
-            ui.label(format!("Type: {:?}", cell_info.cell_type));
+            ui.label(format!("Type: {:?}", cell_info.cell));
             ui.label(format!("Energy: {:?}", cell_info.energy.0));
             ui.label(format!("Facing: {:?}", cell_info.facing));
             ui.label(format!("Genome ID: {:?}", cell_info.genome_id));
+            ui.label(format!(
+                "Genome Spawn: {:?}",
+                cell_info
+                    .genome
+                    .get_entry(*cell_info.genome_id)
+                    .spawn
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            ));
         });
     }
 
@@ -295,6 +304,7 @@ fn initialize_sprouts_system(
     let height = settings.config.simulation.height;
     let width = settings.config.simulation.width;
     let sprouts = settings.config.simulation.initial_sprout_count;
+    let initial_energy = settings.config.simulation.initial_sprout_energy;
 
     let mut positions = HashSet::with_capacity(sprouts);
     while positions.len() < sprouts {
