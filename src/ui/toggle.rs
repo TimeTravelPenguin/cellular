@@ -6,11 +6,17 @@
 //! selected variant's label and tweens to the newly-chosen label with an
 //! easing curve whenever the state changes.
 //!
-//! # Usage
+//! # Styling
+//!
+//! [`ToggleStyle`] holds the defaults applied to every option. Per-state
+//! deviations are expressed through two callbacks stored on the style —
+//! [`ToggleStyle::on_selected`] and [`ToggleStyle::on_unselected`] — which
+//! receive the current state and the style and return an optional
+//! [`StateStyle`] whose `Some` fields override the defaults for that option.
 //!
 //! ```no_run
 //! # use bevy::prelude::*;
-//! use crate::ui::toggle::{spawn_toggle, Toggle, TogglePlugin, ToggleState, ToggleStyle};
+//! use crate::ui::toggle::{spawn_toggle, StateStyle, Toggle, TogglePlugin, ToggleState, ToggleStyle};
 //!
 //! #[derive(Clone, Copy, PartialEq, Eq)]
 //! enum View { Grid, Organic, Charge }
@@ -23,13 +29,21 @@
 //! }
 //!
 //! # fn setup(mut commands: Commands) {
-//! spawn_toggle::<View>(&mut commands, View::Grid, ToggleStyle::default());
+//! let style = ToggleStyle::<View>::default().on_selected(|state, _base| {
+//!     matches!(state, View::Charge).then(|| StateStyle {
+//!         text_color: Some(Color::BLACK),
+//!         indicator_color: Some(Color::srgb(1.0, 0.8, 0.2)),
+//!         ..default()
+//!     })
+//! });
+//! spawn_toggle::<View>(&mut commands, View::Grid, style);
 //! # }
 //! ```
 //!
 //! Add `TogglePlugin::<View>::default()` to the app so the widget's systems run.
 
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use bevy::color::Mix;
 use bevy::prelude::{
@@ -48,24 +62,6 @@ use derive_setters::Setters;
 pub trait ToggleState: Copy + Clone + PartialEq + Send + Sync + 'static {
     fn label(&self) -> &'static str;
     fn states() -> &'static [Self];
-
-    /// Text color when this state is the currently-selected one. Falls back to
-    /// [`ToggleStyle::text_color_selected`] when `None`.
-    fn text_color_selected(&self) -> Option<Color> {
-        None
-    }
-
-    /// Text color when this state is *not* currently selected. Falls back to
-    /// [`ToggleStyle::text_color_unselected`] when `None`.
-    fn text_color_unselected(&self) -> Option<Color> {
-        None
-    }
-
-    /// Per-state indicator pill color override. Falls back to [`ToggleStyle::indicator`] when `None`.
-    /// The indicator tweens between consecutive states' colors when it moves.
-    fn indicator_color(&self) -> Option<Color> {
-        None
-    }
 }
 
 /// Component on the toggle's root node holding the currently-selected state.
@@ -74,22 +70,43 @@ pub struct Toggle<S: ToggleState> {
     pub state: S,
 }
 
+/// Per-state style overrides returned from [`ToggleStyle`]'s `on_selected` /
+/// `on_unselected` callbacks. Every field is optional; `None` means "use the
+/// base value from [`ToggleStyle`]".
+#[derive(Default, Clone, Debug)]
+pub struct StateStyle {
+    /// Replaces the base [`TextFont`] (font handle, size, line height, etc.).
+    pub text_font: Option<TextFont>,
+    /// Replaces the base text color.
+    pub text_color: Option<Color>,
+    /// Replaces the indicator pill color (only honored when the state is
+    /// currently selected — the pill tweens to this value).
+    pub indicator_color: Option<Color>,
+}
+
+type StateStyleFn<S> = dyn Fn(&S, &ToggleStyle<S>) -> Option<StateStyle> + Send + Sync + 'static;
+
 /// Visual and motion parameters for a toggle.
-#[derive(Component, Setters, Debug, Clone, Copy)]
-pub struct ToggleStyle {
+#[derive(Component, Setters, Clone)]
+pub struct ToggleStyle<S: ToggleState> {
     pub height: f32,
     pub padding: f32,
     pub option_padding_x: f32,
     pub background: Color,
     pub indicator: Color,
-    pub text_color_selected: Color,
-    pub text_color_unselected: Color,
-    pub font_size: f32,
+    pub text_color: Color,
+    pub text_font: TextFont,
     pub duration: f32,
     pub ease: EaseFunction,
+    #[setters(skip)]
+    on_selected: Option<Arc<StateStyleFn<S>>>,
+    #[setters(skip)]
+    on_unselected: Option<Arc<StateStyleFn<S>>>,
+    #[setters(skip)]
+    _marker: PhantomData<fn() -> S>,
 }
 
-impl Default for ToggleStyle {
+impl<S: ToggleState> Default for ToggleStyle<S> {
     fn default() -> Self {
         let background = catppuccin::PALETTE.mocha.colors.crust;
         let background = Color::hsl(
@@ -105,18 +122,11 @@ impl Default for ToggleStyle {
             indicator.hsl.l as f32,
         );
 
-        let text_selected = catppuccin::PALETTE.mocha.colors.text;
-        let text_color_selected = Color::hsl(
-            text_selected.hsl.h as f32,
-            text_selected.hsl.s as f32,
-            text_selected.hsl.l as f32,
-        );
-
-        let text_unselected = catppuccin::PALETTE.mocha.colors.subtext0;
-        let text_color_unselected = Color::hsl(
-            text_unselected.hsl.h as f32,
-            text_unselected.hsl.s as f32,
-            text_unselected.hsl.l as f32,
+        let text_colour = catppuccin::PALETTE.mocha.colors.text;
+        let text_color = Color::hsl(
+            text_colour.hsl.h as f32,
+            text_colour.hsl.s as f32,
+            text_colour.hsl.l as f32,
         );
 
         Self {
@@ -125,12 +135,48 @@ impl Default for ToggleStyle {
             option_padding_x: 16.0,
             background,
             indicator,
-            text_color_selected,
-            text_color_unselected,
-            font_size: 14.0,
+            text_color,
+            text_font: TextFont {
+                font_size: 14.0,
+                ..default()
+            },
             duration: 0.22,
             ease: EaseFunction::CubicOut,
+            on_selected: None,
+            on_unselected: None,
+            _marker: PhantomData,
         }
+    }
+}
+
+impl<S: ToggleState> ToggleStyle<S> {
+    /// Registers a callback invoked for the currently-selected option. Return
+    /// `Some(StateStyle { ... })` to override base styling for that state, or
+    /// `None` to leave it untouched.
+    pub fn on_selected<F>(mut self, cb: F) -> Self
+    where
+        F: Fn(&S, &ToggleStyle<S>) -> Option<StateStyle> + Send + Sync + 'static,
+    {
+        self.on_selected = Some(Arc::new(cb));
+        self
+    }
+
+    /// Registers a callback invoked for every non-selected option.
+    pub fn on_unselected<F>(mut self, cb: F) -> Self
+    where
+        F: Fn(&S, &ToggleStyle<S>) -> Option<StateStyle> + Send + Sync + 'static,
+    {
+        self.on_unselected = Some(Arc::new(cb));
+        self
+    }
+
+    fn resolve(&self, state: S, selected: S) -> StateStyle {
+        let cb = if state == selected {
+            self.on_selected.as_ref()
+        } else {
+            self.on_unselected.as_ref()
+        };
+        cb.and_then(|cb| cb(&state, self)).unwrap_or_default()
     }
 }
 
@@ -178,7 +224,7 @@ impl<S: ToggleState> Plugin for TogglePlugin<S> {
             (
                 handle_option_clicks::<S>,
                 retarget_on_state_change::<S>,
-                update_text_colors::<S>,
+                update_text_styling::<S>,
                 animate_indicator::<S>,
             )
                 .chain(),
@@ -186,24 +232,36 @@ impl<S: ToggleState> Plugin for TogglePlugin<S> {
     }
 }
 
-fn option_text_color<S: ToggleState>(state: S, selected: S, style: &ToggleStyle) -> Color {
-    if state == selected {
-        state
-            .text_color_selected()
-            .unwrap_or(style.text_color_selected)
-    } else {
-        state
-            .text_color_unselected()
-            .unwrap_or(style.text_color_unselected)
-    }
-}
-
 /// Spawns a toggle widget and returns its root entity.
 pub fn spawn_toggle<S: ToggleState>(
     commands: &mut Commands,
     initial: S,
-    style: ToggleStyle,
+    style: ToggleStyle<S>,
 ) -> Entity {
+    let height = style.height;
+    let padding = style.padding;
+    let option_padding_x = style.option_padding_x;
+    let background = style.background;
+    let duration = style.duration.max(f32::EPSILON);
+    let ease = style.ease;
+
+    let initial_indicator_color = style
+        .resolve(initial, initial)
+        .indicator_color
+        .unwrap_or(style.indicator);
+
+    let per_option: Vec<(S, TextFont, Color)> = S::states()
+        .iter()
+        .map(|state| {
+            let resolved = style.resolve(*state, initial);
+            let text_font = resolved
+                .text_font
+                .unwrap_or_else(|| style.text_font.clone());
+            let text_color = resolved.text_color.unwrap_or(style.text_color);
+            (*state, text_font, text_color)
+        })
+        .collect();
+
     let root = commands
         .spawn((
             Toggle::<S> { state: initial },
@@ -212,16 +270,14 @@ pub fn spawn_toggle<S: ToggleState>(
                 display: Display::Flex,
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Stretch,
-                padding: UiRect::all(Val::Px(style.padding)),
-                height: Val::Px(style.height),
+                padding: UiRect::all(Val::Px(padding)),
+                height: Val::Px(height),
                 border_radius: BorderRadius::MAX,
                 ..default()
             },
-            BackgroundColor(style.background),
+            BackgroundColor(background),
         ))
         .id();
-
-    let initial_indicator_color = initial.indicator_color().unwrap_or(style.indicator);
 
     commands.entity(root).with_children(|parent| {
         parent.spawn((
@@ -239,15 +295,15 @@ pub fn spawn_toggle<S: ToggleState>(
                 start_color: initial_indicator_color,
                 target_color: initial_indicator_color,
                 current_color: initial_indicator_color,
-                elapsed: style.duration,
-                duration: style.duration.max(f32::EPSILON),
-                ease: style.ease,
+                elapsed: duration,
+                duration,
+                ease,
             },
             Node {
                 position_type: PositionType::Absolute,
-                top: Val::Px(style.padding),
-                left: Val::Px(style.padding),
-                height: Val::Px((style.height - 2.0 * style.padding).max(0.0)),
+                top: Val::Px(padding),
+                left: Val::Px(padding),
+                height: Val::Px((height - 2.0 * padding).max(0.0)),
                 width: Val::Px(0.0),
                 border_radius: BorderRadius::MAX,
                 ..default()
@@ -256,16 +312,15 @@ pub fn spawn_toggle<S: ToggleState>(
             Pickable::IGNORE,
         ));
 
-        for state in S::states() {
-            let text_color = option_text_color(*state, initial, &style);
+        for (state, text_font, text_color) in per_option {
             parent.spawn((
                 Button,
                 ToggleOption::<S> {
                     toggle: root,
-                    state: *state,
+                    state,
                 },
                 Node {
-                    padding: UiRect::axes(Val::Px(style.option_padding_x), Val::Px(0.0)),
+                    padding: UiRect::axes(Val::Px(option_padding_x), Val::Px(0.0)),
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
                     ..default()
@@ -273,10 +328,7 @@ pub fn spawn_toggle<S: ToggleState>(
                 BackgroundColor(Color::NONE),
                 children![(
                     Text::new(state.label()),
-                    TextFont {
-                        font_size: style.font_size,
-                        ..default()
-                    },
+                    text_font,
                     TextColor(text_color),
                     Pickable::IGNORE,
                 )],
@@ -318,8 +370,6 @@ fn selected_option_local_rect<S: ToggleState>(
         opt.toggle == toggle_entity && opt.state == selected_state && node.size.x > 0.0
     })?;
 
-    // Global transforms are in physical pixels; convert the option's physical
-    // left-edge-relative-to-root into logical pixels for Val::Px.
     let rel_center_x = opt_xform.translation.x - root_xform.translation.x;
     let opt_left_in_root_physical = rel_center_x + (root_node.size.x - opt_node.size.x) / 2.0;
     let scale = root_node.inverse_scale_factor;
@@ -327,7 +377,7 @@ fn selected_option_local_rect<S: ToggleState>(
 }
 
 fn retarget_on_state_change<S: ToggleState>(
-    changed_toggles: Query<(Entity, &Toggle<S>, &ToggleStyle), Changed<Toggle<S>>>,
+    changed_toggles: Query<(Entity, &Toggle<S>, &ToggleStyle<S>), Changed<Toggle<S>>>,
     roots: Query<(&ComputedNode, &UiGlobalTransform), With<Toggle<S>>>,
     options: Query<(&ToggleOption<S>, &ComputedNode, &UiGlobalTransform)>,
     mut indicators: Query<(&ToggleIndicator, &mut ToggleTween)>,
@@ -339,7 +389,10 @@ fn retarget_on_state_change<S: ToggleState>(
             continue;
         };
 
-        let target_color = toggle.state.indicator_color().unwrap_or(style.indicator);
+        let target_color = style
+            .resolve(toggle.state, toggle.state)
+            .indicator_color
+            .unwrap_or(style.indicator);
 
         for (indicator, mut tween) in indicators.iter_mut() {
             if indicator.toggle != toggle_entity {
@@ -356,20 +409,25 @@ fn retarget_on_state_change<S: ToggleState>(
     }
 }
 
-fn update_text_colors<S: ToggleState>(
-    changed_toggles: Query<(Entity, &Toggle<S>, &ToggleStyle), Changed<Toggle<S>>>,
+fn update_text_styling<S: ToggleState>(
+    changed_toggles: Query<(Entity, &Toggle<S>, &ToggleStyle<S>), Changed<Toggle<S>>>,
     options: Query<(&ToggleOption<S>, &Children)>,
-    mut texts: Query<&mut TextColor, With<Text>>,
+    mut texts: Query<(&mut TextColor, &mut TextFont), With<Text>>,
 ) {
     for (toggle_entity, toggle, style) in changed_toggles.iter() {
         for (option, children) in options.iter() {
             if option.toggle != toggle_entity {
                 continue;
             }
-            let color = option_text_color(option.state, toggle.state, style);
+            let resolved = style.resolve(option.state, toggle.state);
+            let color = resolved.text_color.unwrap_or(style.text_color);
+            let font = resolved
+                .text_font
+                .unwrap_or_else(|| style.text_font.clone());
             for &child in children.iter() {
-                if let Ok(mut text_color) = texts.get_mut(child) {
+                if let Ok((mut text_color, mut text_font)) = texts.get_mut(child) {
                     text_color.0 = color;
+                    *text_font = font.clone();
                 }
             }
         }

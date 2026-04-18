@@ -7,7 +7,7 @@ use bevy::prelude::*;
 #[path = "../src/ui/toggle.rs"]
 mod toggle;
 
-use toggle::{Toggle, TogglePlugin, ToggleState, ToggleStyle, spawn_toggle};
+use toggle::{StateStyle, Toggle, TogglePlugin, ToggleState, ToggleStyle, spawn_toggle};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Size {
@@ -38,30 +38,6 @@ impl ToggleState for Size {
             Self::SuperUltraMegaLargeAndLong,
         ]
     }
-
-    fn text_color_selected(&self) -> Option<Color> {
-        if *self == Self::SuperUltraMegaLargeAndLong {
-            Some(Color::BLACK)
-        } else {
-            None
-        }
-    }
-
-    fn text_color_unselected(&self) -> Option<Color> {
-        if *self == Self::SuperUltraMegaLargeAndLong {
-            Some(Color::srgb(0.6, 0.2, 0.2))
-        } else {
-            None
-        }
-    }
-
-    fn indicator_color(&self) -> Option<Color> {
-        if *self == Self::SuperUltraMegaLargeAndLong {
-            Some(Color::srgb(1.0, 0.0, 0.0))
-        } else {
-            None
-        }
-    }
 }
 
 fn main() {
@@ -86,7 +62,26 @@ fn setup(mut commands: Commands) {
         })
         .id();
 
-    let toggle = spawn_toggle::<Size>(&mut commands, Size::Medium, ToggleStyle::default());
+    let style = ToggleStyle::<Size>::default()
+        .on_selected(|state, base| {
+            (*state == Size::SuperUltraMegaLargeAndLong).then(|| StateStyle {
+                text_font: Some(TextFont {
+                    weight: FontWeight::BOLD,
+                    font_size: base.text_font.font_size + 5.0,
+                    ..Default::default()
+                }),
+                text_color: Some(Color::BLACK),
+                indicator_color: Some(Color::srgb(1.0, 0.0, 0.0)),
+            })
+        })
+        .on_unselected(|state, _base| {
+            (*state == Size::SuperUltraMegaLargeAndLong).then(|| StateStyle {
+                text_color: Some(Color::srgb(0.6, 0.2, 0.2)),
+                ..Default::default()
+            })
+        });
+
+    let toggle = spawn_toggle::<Size>(&mut commands, Size::Medium, style);
     commands.entity(toggle).insert(ChildOf(container));
 }
 
