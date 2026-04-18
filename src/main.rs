@@ -23,6 +23,7 @@ use crate::{
     grid::GridPlugin,
     input::SimulationInputPlugin,
     simulation::SimulationGrid,
+    ui::UiPlugin,
 };
 
 mod cells;
@@ -33,6 +34,7 @@ mod genes;
 mod grid;
 mod input;
 mod simulation;
+mod ui;
 mod utils;
 
 const TILE_SIZE: f32 = 10.0;
@@ -196,6 +198,7 @@ fn run_simulation(config: SimulationConfig) {
             EntropyPlugin::<WyRand>::default(),
             EguiPlugin::default(),
             SimulationInputPlugin,
+            UiPlugin,
             CellPlugin,
             GridPlugin,
         ))
