@@ -20,6 +20,7 @@ use crate::{
     config::SimulationConfig,
     energy::{CellEnergy, ChargeEnergyEnvironment, OrganicEnergyEnvironment},
     genes::{Genome, GenomeID, RelativeDirection},
+    grid::GridPlugin,
     input::SimulationInputPlugin,
     simulation::SimulationGrid,
 };
@@ -29,6 +30,7 @@ mod cli;
 mod config;
 mod energy;
 mod genes;
+mod grid;
 mod input;
 mod simulation;
 mod utils;
@@ -195,6 +197,7 @@ fn run_simulation(config: SimulationConfig) {
             EguiPlugin::default(),
             SimulationInputPlugin,
             CellPlugin,
+            GridPlugin,
         ))
         .insert_resource(simulation_settings)
         .insert_resource(organic_energy_env)
@@ -348,42 +351,6 @@ fn shuffle_cells_system(
                 break;
             }
         }
-    }
-}
-
-fn draw_grid_gizmos_system(
-    mut gizmos: Gizmos,
-    simulation_settings: Res<SimulationSettings>,
-    grid_visible: Res<GridVisible>,
-) {
-    if !grid_visible.0 {
-        return;
-    }
-
-    let sim_width = simulation_settings.config.simulation.width;
-    let sim_height = simulation_settings.config.simulation.height;
-
-    let grid_width = sim_width as f32 * TILE_SIZE;
-    let grid_height = sim_height as f32 * TILE_SIZE;
-
-    let line_color = Color::linear_rgba(1.0, 1.0, 1.0, 0.1);
-
-    for x in 0..=sim_width {
-        let world_x = (x as f32 - 0.5) * TILE_SIZE;
-        gizmos.line_2d(
-            Vec2::new(world_x, -0.5 * TILE_SIZE),
-            Vec2::new(world_x, grid_height - 0.5 * TILE_SIZE),
-            line_color,
-        );
-    }
-
-    for y in 0..=sim_height {
-        let world_y = (y as f32 - 0.5) * TILE_SIZE;
-        gizmos.line_2d(
-            Vec2::new(-0.5 * TILE_SIZE, world_y),
-            Vec2::new(grid_width - 0.5 * TILE_SIZE, world_y),
-            line_color,
-        );
     }
 }
 
