@@ -1,10 +1,10 @@
 use bevy::{
-    app::Plugin,
+    app::{Plugin, PreStartup},
     log::info,
     prelude::{
         Assets, Bundle, Children, Circle, Color, ColorMaterial, Commands, ContainsEntity, Deref,
-        Ellipse, Entity, EntityCommands, EntityEvent, Mesh, Mesh2d, MeshMaterial2d, On, Quat,
-        Query, Rectangle, ResMut, Transform, Vec3, default,
+        Ellipse, Entity, EntityEvent, Handle, Mesh, Mesh2d, MeshMaterial2d, On, Quat, Query,
+        Rectangle, Res, ResMut, Resource, Transform, Vec3, default,
     },
 };
 
@@ -88,8 +88,83 @@ pub struct CellRenderPlugin;
 
 impl Plugin for CellRenderPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
-        app.add_observer(draw_new_cells_system);
+        app.add_systems(PreStartup, init_cell_render_assets_system)
+            .add_observer(draw_new_cells_system);
     }
+}
+
+/// Cached render handles for a single cell type, built once at startup and
+/// cloned for every cell entity.
+#[derive(Debug)]
+pub struct CachedCellSpec {
+    mesh: Handle<Mesh>,
+    material: Handle<ColorMaterial>,
+    children: Vec<CachedChildSpec>,
+}
+
+#[derive(Debug)]
+pub struct CachedChildSpec {
+    mesh: Handle<Mesh>,
+    material: Handle<ColorMaterial>,
+    transform: Transform,
+}
+
+#[derive(Resource, Debug)]
+pub struct CellRenderAssets {
+    leaf: CachedCellSpec,
+    antenna: CachedCellSpec,
+    root: CachedCellSpec,
+    sprout: CachedCellSpec,
+    branch: CachedCellSpec,
+    seed: CachedCellSpec,
+}
+
+impl CellRenderAssets {
+    fn for_cell(&self, cell: &Cell) -> &CachedCellSpec {
+        match cell {
+            Cell::Leaf => &self.leaf,
+            Cell::Antenna => &self.antenna,
+            Cell::Root => &self.root,
+            Cell::Sprout => &self.sprout,
+            Cell::Branch => &self.branch,
+            Cell::Seed => &self.seed,
+        }
+    }
+}
+
+fn build_cached_spec(
+    spec: &CellVisualSpec,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+) -> CachedCellSpec {
+    CachedCellSpec {
+        mesh: spec.shape.build_mesh_handle(meshes),
+        material: materials.add(ColorMaterial::from_color(spec.color)),
+        children: spec
+            .children
+            .iter()
+            .map(|child| CachedChildSpec {
+                mesh: child.shape.build_mesh_handle(meshes),
+                material: materials.add(ColorMaterial::from_color(child.color)),
+                transform: child.transform,
+            })
+            .collect(),
+    }
+}
+
+fn init_cell_render_assets_system(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    commands.insert_resource(CellRenderAssets {
+        leaf: build_cached_spec(&LEAF_VISUAL_SPEC, &mut meshes, &mut materials),
+        antenna: build_cached_spec(&ANTENNA_VISUAL_SPEC, &mut meshes, &mut materials),
+        root: build_cached_spec(&ROOT_VISUAL_SPEC, &mut meshes, &mut materials),
+        sprout: build_cached_spec(&SPROUT_VISUAL_SPEC, &mut meshes, &mut materials),
+        branch: build_cached_spec(&BRANCH_VISUAL_SPEC, &mut meshes, &mut materials),
+        seed: build_cached_spec(&SEED_VISUAL_SPEC, &mut meshes, &mut materials),
+    });
 }
 
 /// Event to trigger drawing a cell. Contains the entity of the cell to be drawn.
@@ -112,17 +187,15 @@ enum ShapeSpec {
 }
 
 impl ShapeSpec {
-    pub fn into_mesh(self, meshes: &mut Assets<Mesh>) -> Mesh2d {
-        let handle = match self {
+    pub fn build_mesh_handle(self, meshes: &mut Assets<Mesh>) -> Handle<Mesh> {
+        match self {
             ShapeSpec::Circle(r) => meshes.add(Circle::new(r)),
             ShapeSpec::Ellipse {
                 half_width,
                 half_height,
             } => meshes.add(Ellipse::new(half_width, half_height)),
             ShapeSpec::Rect { width, height } => meshes.add(Rectangle::new(width, height)),
-        };
-
-        Mesh2d(handle)
+        }
     }
 }
 
@@ -140,19 +213,6 @@ struct CellVisualSpec {
     shape: ShapeSpec,
     color: Color,
     children: &'static [&'static ChildVisualSpec],
-}
-
-impl Cell {
-    fn visual_spec(&self) -> CellVisualSpec {
-        match self {
-            Cell::Leaf => LEAF_VISUAL_SPEC,
-            Cell::Antenna => ANTENNA_VISUAL_SPEC,
-            Cell::Root => ROOT_VISUAL_SPEC,
-            Cell::Sprout => SPROUT_VISUAL_SPEC,
-            Cell::Branch => BRANCH_VISUAL_SPEC,
-            Cell::Seed => SEED_VISUAL_SPEC,
-        }
-    }
 }
 
 /// Computes the rotation needed to orient a cell in the specified facing direction.
@@ -176,38 +236,6 @@ fn get_transform_with_rotation(grid_pos: &GridPosition, facing: Direction) -> Tr
     }
 }
 
-/// Inserts the necessary components to render a cell based on its visual specification.
-fn insert_cell_visual(
-    entity_commands: &mut EntityCommands,
-    spec: CellVisualSpec,
-    transform: Transform,
-    grid_pos: GridPosition,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
-) {
-    let mesh = spec.shape.into_mesh(meshes);
-    let material = MeshMaterial2d(materials.add(ColorMaterial::from_color(spec.color)));
-
-    entity_commands.insert((
-        CellRenderBundle {
-            mesh,
-            material,
-            transform,
-        },
-        grid_pos,
-    ));
-
-    entity_commands.with_children(|parent| {
-        for child in spec.children {
-            parent.spawn(CellRenderBundle {
-                mesh: child.shape.into_mesh(meshes),
-                material: MeshMaterial2d(materials.add(ColorMaterial::from_color(child.color))),
-                transform: child.transform,
-            });
-        }
-    });
-}
-
 /// System to (re)create visual entities for cells. Despawns any existing child
 /// visuals first so stale sprites don't linger when the cell's type changes.
 pub fn draw_new_cells_system(
@@ -215,8 +243,7 @@ pub fn draw_new_cells_system(
     mut commands: Commands,
     cells: Query<(Entity, &Cell, &GridPosition, &FacingDirection)>,
     existing_children: Query<&Children>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    assets: Res<CellRenderAssets>,
 ) {
     let Ok((entity, cell, grid_pos, facing_direction)) = cells.get(event.entity()) else {
         return;
@@ -234,15 +261,25 @@ pub fn draw_new_cells_system(
     }
 
     let transform = get_transform_with_rotation(grid_pos, **facing_direction);
-    let spec = cell.visual_spec();
+    let cached = assets.for_cell(cell);
 
     let mut entity_commands = commands.entity(entity);
-    insert_cell_visual(
-        &mut entity_commands,
-        spec,
-        transform,
+    entity_commands.insert((
+        CellRenderBundle {
+            mesh: Mesh2d(cached.mesh.clone()),
+            material: MeshMaterial2d(cached.material.clone()),
+            transform,
+        },
         *grid_pos,
-        &mut meshes,
-        &mut materials,
-    );
+    ));
+
+    entity_commands.with_children(|parent| {
+        for child in &cached.children {
+            parent.spawn(CellRenderBundle {
+                mesh: Mesh2d(child.mesh.clone()),
+                material: MeshMaterial2d(child.material.clone()),
+                transform: child.transform,
+            });
+        }
+    });
 }

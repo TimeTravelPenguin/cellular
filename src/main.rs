@@ -2,12 +2,7 @@
 
 use std::f32;
 
-use avian2d::{self, PhysicsPlugins};
-use bevy::{
-    dev_tools::picking_debug::{DebugPickingMode, DebugPickingPlugin},
-    platform::collections::HashSet,
-    prelude::*,
-};
+use bevy::{platform::collections::HashSet, prelude::*};
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_rand::{
     global::GlobalRng,
@@ -98,11 +93,14 @@ impl GridPosition {
     }
 }
 
-#[derive(Component, Reflect, Clone, Debug)]
-pub struct Grid;
+#[derive(Resource, Reflect, Clone, Copy, Debug)]
+pub struct GridVisible(pub bool);
 
-#[derive(Resource, Reflect, Clone, Debug)]
-pub struct ToggleGridVisible;
+impl Default for GridVisible {
+    fn default() -> Self {
+        Self(true)
+    }
+}
 
 #[derive(States, Reflect, Default, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SimulationState {
@@ -193,27 +191,11 @@ fn run_simulation(config: SimulationConfig) {
         .add_plugins((
             DefaultPlugins,
             MeshPickingPlugin,
-            DebugPickingPlugin,
             EntropyPlugin::<WyRand>::default(),
-            PhysicsPlugins::default(),
             EguiPlugin::default(),
             SimulationInputPlugin,
             CellPlugin,
         ))
-        .insert_resource(DebugPickingMode::Normal)
-        .add_systems(
-            PreUpdate,
-            (|mut mode: ResMut<DebugPickingMode>| {
-                *mode = match *mode {
-                    DebugPickingMode::Disabled => DebugPickingMode::Normal,
-                    DebugPickingMode::Normal => DebugPickingMode::Noisy,
-                    DebugPickingMode::Noisy => DebugPickingMode::Disabled,
-                }
-            })
-            .distributive_run_if(bevy::input::common_conditions::input_just_pressed(
-                KeyCode::F3,
-            )),
-        )
         .insert_resource(simulation_settings)
         .insert_resource(organic_energy_env)
         .insert_resource(charge_energy_env)
@@ -222,13 +204,13 @@ fn run_simulation(config: SimulationConfig) {
         .init_state::<SimulationState>()
         .init_resource::<SimulationStep>()
         .init_resource::<CellPositions>()
+        .init_resource::<GridVisible>()
         .add_message::<UpdateCellInfoMessage>()
         .add_systems(EguiPrimaryContextPass, cell_info_ui_system)
         .add_systems(
             Startup,
             (
                 setup_camera_system,
-                draw_world_grid_system,
                 initialize_sprouts_system,
                 // add_test_cells,
             ),
@@ -237,6 +219,7 @@ fn run_simulation(config: SimulationConfig) {
             FixedUpdate,
             (shuffle_cells_system,).run_if(in_state(SimulationState::Running)),
         )
+        .add_systems(Update, draw_grid_gizmos_system)
         .add_systems(
             PostUpdate,
             (|mut step: ResMut<SimulationStep>| {
@@ -368,12 +351,15 @@ fn shuffle_cells_system(
     }
 }
 
-fn draw_world_grid_system(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+fn draw_grid_gizmos_system(
+    mut gizmos: Gizmos,
     simulation_settings: Res<SimulationSettings>,
+    grid_visible: Res<GridVisible>,
 ) {
+    if !grid_visible.0 {
+        return;
+    }
+
     let sim_width = simulation_settings.config.simulation.width;
     let sim_height = simulation_settings.config.simulation.height;
 
@@ -382,40 +368,22 @@ fn draw_world_grid_system(
 
     let line_color = Color::linear_rgba(1.0, 1.0, 1.0, 0.1);
 
-    // Draw vertical lines
     for x in 0..=sim_width {
         let world_x = (x as f32 - 0.5) * TILE_SIZE;
-        let mesh = Segment2d::new(
+        gizmos.line_2d(
             Vec2::new(world_x, -0.5 * TILE_SIZE),
             Vec2::new(world_x, grid_height - 0.5 * TILE_SIZE),
+            line_color,
         );
-
-        info!("Drawing vertical grid line at x={}", world_x);
-        commands.spawn((
-            Mesh2d(meshes.add(mesh)),
-            MeshMaterial2d(materials.add(ColorMaterial::from_color(line_color))),
-            Pickable::IGNORE,
-            Visibility::Visible,
-            Grid,
-        ));
     }
 
-    // Draw horizontal lines
     for y in 0..=sim_height {
         let world_y = (y as f32 - 0.5) * TILE_SIZE;
-        let mesh = Segment2d::new(
+        gizmos.line_2d(
             Vec2::new(-0.5 * TILE_SIZE, world_y),
             Vec2::new(grid_width - 0.5 * TILE_SIZE, world_y),
+            line_color,
         );
-
-        info!("Drawing horizontal grid line at y={}", world_y);
-        commands.spawn((
-            Mesh2d(meshes.add(mesh)),
-            MeshMaterial2d(materials.add(ColorMaterial::from_color(line_color))),
-            Pickable::IGNORE,
-            Visibility::Visible,
-            Grid,
-        ));
     }
 }
 

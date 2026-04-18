@@ -5,8 +5,7 @@ use bevy::{
 };
 
 use crate::{
-    Grid, SimulationSettings, SimulationState, SimulationView, ToggleGridVisible,
-    UpdateCellInfoMessage,
+    GridVisible, SimulationSettings, SimulationState, SimulationView, UpdateCellInfoMessage,
     cells::{Cell, NewCellEvent},
 };
 
@@ -18,13 +17,7 @@ pub struct SimulationInputPlugin;
 impl Plugin for SimulationInputPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<Pause>()
-            .add_systems(
-                PreUpdate,
-                (
-                    toggle_grid_visibility_system.run_if(resource_exists::<ToggleGridVisible>),
-                    pause_system,
-                ),
-            )
+            .add_systems(PreUpdate, pause_system)
             .add_systems(Update, (move_camera_system, process_keyboard_system))
             .add_observer(|event: On<NewCellEvent>, mut commands: Commands| {
                 commands
@@ -95,8 +88,8 @@ fn move_camera_system(
 }
 
 fn process_keyboard_system(
-    mut commands: Commands,
     mut simulation_settings: ResMut<SimulationSettings>,
+    mut grid_visible: ResMut<GridVisible>,
     mut time: ResMut<Time<Fixed>>,
     simulation_state: Res<State<SimulationState>>,
     mut pause_writer: MessageWriter<Pause>,
@@ -128,8 +121,8 @@ fn process_keyboard_system(
     }
 
     if keyboard.just_pressed(KeyCode::KeyH) {
-        info!("Toggled grid visibility");
-        commands.insert_resource(ToggleGridVisible);
+        grid_visible.0 = !grid_visible.0;
+        info!("Toggled grid visibility to {}", grid_visible.0);
     }
 
     if keyboard.just_pressed(KeyCode::Space) {
@@ -179,17 +172,6 @@ fn pause_system(
             info!("Simulation resumed");
         }
     }
-}
-
-fn toggle_grid_visibility_system(
-    mut commands: Commands,
-    mut query: Query<&mut Visibility, With<Grid>>,
-) {
-    for mut visibility in query.iter_mut() {
-        visibility.toggle_visible_hidden();
-    }
-
-    commands.remove_resource::<ToggleGridVisible>();
 }
 
 pub fn observe_cell_hover(
