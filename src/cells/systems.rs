@@ -1,12 +1,11 @@
 use std::ops::AddAssign;
 
 use bevy::{
-    app::{App, FixedPostUpdate, FixedUpdate, Plugin},
+    app::{App, FixedFirst, FixedPostUpdate, FixedUpdate, Plugin},
     ecs::{
         entity::Entity,
         message::{MessageReader, MessageWriter},
-        observer::On,
-        query::QueryData,
+        query::{Changed, QueryData},
         schedule::{IntoScheduleConfigs, SystemSet},
         system::{Res, Single},
     },
@@ -14,13 +13,14 @@ use bevy::{
     prelude::{Commands, Query, ResMut, With, Without, info},
 };
 use bevy_rand::{global::GlobalRng, prelude::WyRand};
+use nonempty::NonEmpty;
 use rand::RngExt;
 
 use crate::{
-    GridPosition, SimulationSettings,
+    CellPositions, GridPosition, SimulationSettings,
     cells::{
-        render::{DrawCellEvent, draw_new_cells_system},
-        spawn::spawn_cell,
+        render::DrawCellEvent,
+        spawn::{ChildCellBundle, SpawnChildrenCellsMessage},
         *,
     },
     energy::{
@@ -37,20 +37,19 @@ pub enum CellSystemsSet {
     EnergyCollection,
     EnergyTransfer,
     GenomeExecution,
+    CellSpawn,
+    CellDeath,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct CellPlugin;
+pub struct CellSystemsPlugin;
 
-impl Plugin for CellPlugin {
+impl Plugin for CellSystemsPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<CellEnergyTransferMessage>()
             .add_message::<RequestDeathMessage>()
             .add_message::<RemoveChildCellMessage>()
-            .add_observer(|event: On<NewCellEvent>, mut commands: Commands| {
-                commands.entity(event.entity).trigger(DrawCellEvent);
-            })
-            .add_observer(draw_new_cells_system)
+            .add_systems(FixedFirst, sync_cell_markers_system)
             .add_systems(
                 FixedUpdate,
                 (
@@ -71,7 +70,8 @@ impl Plugin for CellPlugin {
                 (
                     apply_living_cost_system,
                     update_previous_energy_system,
-                    handle_cell_death_system,
+                    handle_cell_death_system.in_set(CellSystemsSet::CellDeath),
+                    apply_remove_child_system,
                 )
                     .chain(),
             )
@@ -84,7 +84,66 @@ impl Plugin for CellPlugin {
                         .before(CellSystemsSet::GenomeExecution),
                     CellSystemsSet::GenomeExecution.after(CellSystemsSet::EnergyTransfer),
                 ),
+            )
+            .configure_sets(
+                FixedPostUpdate,
+                CellSystemsSet::CellSpawn.before(CellSystemsSet::CellDeath),
             );
+    }
+}
+
+/// Keeps per-type marker components (`LeafCell`, `RootCell`, ...) in sync with
+/// the `Cell` enum value. Runs on any `Cell` insertion or mutation.
+fn sync_cell_markers_system(
+    mut commands: Commands,
+    query: Query<(Entity, &Cell), Changed<Cell>>,
+) {
+    for (entity, cell) in query.iter() {
+        let mut ec = commands.entity(entity);
+        ec.remove::<LeafCell>()
+            .remove::<AntennaCell>()
+            .remove::<RootCell>()
+            .remove::<SproutCell>()
+            .remove::<BranchCell>()
+            .remove::<SeedCell>();
+        match cell {
+            Cell::Leaf => {
+                ec.insert(LeafCell);
+            }
+            Cell::Antenna => {
+                ec.insert(AntennaCell);
+            }
+            Cell::Root => {
+                ec.insert(RootCell);
+            }
+            Cell::Sprout => {
+                ec.insert(SproutCell);
+            }
+            Cell::Branch => {
+                ec.insert(BranchCell);
+            }
+            Cell::Seed => {
+                ec.insert(SeedCell);
+            }
+        }
+    }
+}
+
+/// Processes `RemoveChildCellMessage`s emitted by the death handler, pruning
+/// dead entities from the surviving parent's or child's `CellRelation`.
+fn apply_remove_child_system(
+    mut relations: Query<&mut CellRelation>,
+    mut reader: MessageReader<RemoveChildCellMessage>,
+) {
+    for msg in reader.read() {
+        if let Ok(mut parent_rel) = relations.get_mut(msg.parent) {
+            parent_rel.children.remove(&msg.child);
+        }
+        if let Ok(mut child_rel) = relations.get_mut(msg.child)
+            && child_rel.parent == Some(msg.parent)
+        {
+            child_rel.parent = None;
+        }
     }
 }
 
@@ -110,17 +169,26 @@ fn leaf_cell_collect_energy_system(
     let coeff = settings.config.environment.light_coef;
     let light_energy = settings.config.environment.light_energy;
 
+    const NEIGHBOR_DELTAS: [(isize, isize); 8] = [
+        (-1, -1),
+        (-1, 1),
+        (-1, 0),
+        (1, -1),
+        (1, 1),
+        (1, 0),
+        (0, -1),
+        (0, 1),
+    ];
+
     for (grid_pos, mut energy) in query.iter_mut() {
-        let neighbors = [
-            (grid_pos.x - 1, grid_pos.y - 1),
-            (grid_pos.x - 1, grid_pos.y + 1),
-            (grid_pos.x - 1, grid_pos.y),
-            (grid_pos.x + 1, grid_pos.y - 1),
-            (grid_pos.x + 1, grid_pos.y + 1),
-            (grid_pos.x + 1, grid_pos.y),
-            (grid_pos.x, grid_pos.y - 1),
-            (grid_pos.x, grid_pos.y + 1),
-        ];
+        let neighbors: Vec<(usize, usize)> = NEIGHBOR_DELTAS
+            .iter()
+            .filter_map(|&(dx, dy)| {
+                let nx = grid_pos.x.checked_add_signed(dx)?;
+                let ny = grid_pos.y.checked_add_signed(dy)?;
+                Some((nx, ny))
+            })
+            .collect();
 
         let has_leaf_neighbor = neighbors
             .iter()
@@ -228,16 +296,6 @@ fn update_previous_energy_system(mut query: Query<(&mut PreviousEnergy, &CellEne
     }
 }
 
-fn has_enough_energy_for_spawn(
-    cell_energy: CellEnergy,
-    spawn: &[Cell],
-    settings: &SimulationSettings,
-) -> bool {
-    let total_cost = settings.config.cell_action_costs.reproduce_cost * spawn.len() as f32;
-
-    cell_energy.0 >= total_cost
-}
-
 #[derive(QueryData)]
 #[query_data(mutable)]
 struct GenomeExecutionQuery {
@@ -257,9 +315,10 @@ fn execute_genome_system(
     mut commands: Commands,
     mut rng: Single<&mut WyRand, With<GlobalRng>>,
     mut cells: Query<GenomeExecutionQuery>,
+    mut spawn_writer: MessageWriter<SpawnChildrenCellsMessage>,
     organic_energy_env: Res<OrganicEnergyEnvironment>,
     charge_energy_env: Res<ChargeEnergyEnvironment>,
-    simulation_settings: Res<SimulationSettings>,
+    _simulation_settings: Res<SimulationSettings>,
 ) {
     let cell_positions: HashMap<GridPosition, Cell> = cells
         .iter()
@@ -345,52 +404,55 @@ fn execute_genome_system(
         let _precondition_result = genome.eval_preconditions(*genome_id, &precondition_context);
         let is_multicellular = cell.cell_relation.parent.is_some();
 
-        let precondition_result = PreconditionEvaluationResult::Unset; // TEMP
+        // HACK: Temporary until fully implemented
+        let precondition_result = PreconditionEvaluationResult::Unset;
 
         match precondition_result {
             PreconditionEvaluationResult::Unset => {
                 let entry = genome.get_entry(*genome_id);
-                let spawned = entry.spawn.into_iter().collect::<Vec<_>>();
 
-                if spawned.is_empty()
-                    || !has_enough_energy_for_spawn(
-                        *cell.cell_energy,
-                        &spawned,
-                        &simulation_settings,
-                    )
-                {
-                    return; // Not enough energy to spawn or no spawn defined
-                }
-
-                let energies = **cell.cell_energy / spawned.len() as f32;
-
-                for spawned_cell in &spawned {
-                    let entity = spawn_cell(
-                        &mut commands,
-                        *cell.grid_pos,
-                        *cell.facing_dir,
-                        *spawned_cell,
-                        CellEnergy(energies),
-                        genome.clone(),
-                        *genome_id,
-                        CellRelation {
-                            parent: Some(cell.entity),
-                            children: HashSet::new(),
-                        },
-                        OrganismDepth(**cell.organism_depth + 1),
-                        RemainingTicksWithoutEnergy(
-                            simulation_settings
-                                .config
-                                .cell_defaults
-                                .max_ticks_without_energy,
+                let children: Vec<ChildCellBundle> = vec![
+                    entry.spawn.forward_cell_spawn.map(|c| ChildCellBundle {
+                        cell: c,
+                        facing_direction: *cell.facing_dir,
+                        grid_pos: cell.grid_pos.position_in_relative_direction(
+                            **cell.facing_dir,
+                            RelativeDirection::Forward,
                         ),
-                    );
+                    }),
+                    entry.spawn.left_cell_spawn.map(|c| ChildCellBundle {
+                        cell: c,
+                        facing_direction: FacingDirection(cell.facing_dir.left()),
+                        grid_pos: cell.grid_pos.position_in_relative_direction(
+                            **cell.facing_dir,
+                            RelativeDirection::Left,
+                        ),
+                    }),
+                    entry.spawn.right_cell_spawn.map(|c| ChildCellBundle {
+                        cell: c,
+                        facing_direction: FacingDirection(cell.facing_dir.right()),
+                        grid_pos: cell.grid_pos.position_in_relative_direction(
+                            **cell.facing_dir,
+                            RelativeDirection::Right,
+                        ),
+                    }),
+                ]
+                .into_iter()
+                .flatten()
+                .collect();
 
-                    cell.cell_relation.children.insert(entity);
-                }
+                let children = NonEmpty::from_vec(children);
 
-                **cell.cell_energy = 0.0;
+                let children = match children {
+                    Some(children) => children,
+                    None => continue, // No spawn defined, so do nothing
+                };
+
                 *cell.cell = Cell::Branch;
+                spawn_writer.write(SpawnChildrenCellsMessage {
+                    parent: cell.entity,
+                    new_cells: children,
+                });
 
                 commands.entity(cell.entity).trigger(DrawCellEvent);
             }
@@ -470,6 +532,7 @@ fn handle_cell_death_system(
     mut organic_env: ResMut<OrganicEnergyEnvironment>,
     mut charge_env: ResMut<ChargeEnergyEnvironment>,
     settings: Res<SimulationSettings>,
+    mut cell_positions: ResMut<CellPositions>,
     mut reader: MessageReader<RequestDeathMessage>,
     mut writer: MessageWriter<RemoveChildCellMessage>,
 ) {
@@ -509,6 +572,7 @@ fn handle_cell_death_system(
             charge_env.add(pos.x, pos.y, remaining_energy);
         }
 
+        cell_positions.remove(pos);
         commands.entity(msg.entity).despawn();
     }
 }

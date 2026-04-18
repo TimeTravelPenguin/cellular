@@ -28,7 +28,7 @@ impl Plugin for SimulationInputPlugin {
             .add_systems(Update, (move_camera_system, process_keyboard_system))
             .add_observer(|event: On<NewCellEvent>, mut commands: Commands| {
                 commands
-                    .entity(event.entity)
+                    .entity(event.0)
                     .observe(observe_cell_hover)
                     .observe(observe_cell_out);
             });

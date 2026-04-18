@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use bevy::{
+    app::{PluginGroup, PluginGroupBuilder},
     ecs::query::QueryData,
     platform::collections::{HashMap, HashSet},
     prelude::{Component, Deref, DerefMut, Entity, EntityEvent, Message, Reflect},
@@ -16,6 +17,7 @@ use strum::VariantArray;
 
 use crate::{
     GridPosition,
+    cells::{render::CellRenderPlugin, spawn::CellSpawnPlugin},
     energy::CellEnergy,
     genes::{Genome, GenomeID, RelativeDirection},
 };
@@ -25,7 +27,19 @@ mod spawn;
 mod systems;
 
 pub use self::systems::*;
-pub use spawn::spawn_cell;
+pub use spawn::{NewCellBundle, SpawnCellMessage};
+
+#[derive(Clone, Copy, Debug)]
+pub struct CellPlugin;
+
+impl PluginGroup for CellPlugin {
+    fn build(self) -> PluginGroupBuilder {
+        PluginGroupBuilder::start::<Self>()
+            .add(CellSystemsPlugin)
+            .add(CellSpawnPlugin)
+            .add(CellRenderPlugin)
+    }
+}
 
 #[derive(Component, Reflect, Clone, Copy, Debug, Deref, DerefMut)]
 pub struct RemainingTicksWithoutEnergy(pub u32);
@@ -70,12 +84,7 @@ pub struct PreviousEnergy(pub f32);
 pub struct EnergyTransferer;
 
 #[derive(EntityEvent, Debug, Clone)]
-pub struct NewCellEvent {
-    pub entity: Entity,
-    pub grid_pos: GridPosition,
-    pub cell: Cell,
-    pub facing_direction: FacingDirection,
-}
+pub struct NewCellEvent(pub Entity);
 
 #[derive(Message, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct RequestDeathMessage {

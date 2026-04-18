@@ -1,9 +1,10 @@
 use bevy::{
+    app::Plugin,
     log::info,
     prelude::{
-        Assets, Bundle, Circle, Color, ColorMaterial, Commands, ContainsEntity, Deref, Ellipse,
-        Entity, EntityCommands, EntityEvent, Mesh, Mesh2d, MeshMaterial2d, On, Quat, Query,
-        Rectangle, ResMut, Transform, Vec3, default,
+        Assets, Bundle, Children, Circle, Color, ColorMaterial, Commands, ContainsEntity, Deref,
+        Ellipse, Entity, EntityCommands, EntityEvent, Mesh, Mesh2d, MeshMaterial2d, On, Quat,
+        Query, Rectangle, ResMut, Transform, Vec3, default,
     },
 };
 
@@ -81,6 +82,15 @@ const SEED_VISUAL_SPEC: CellVisualSpec = CellVisualSpec {
     color: Color::WHITE,
     children: &[],
 };
+
+#[derive(Clone, Copy, Debug)]
+pub struct CellRenderPlugin;
+
+impl Plugin for CellRenderPlugin {
+    fn build(&self, app: &mut bevy::prelude::App) {
+        app.add_observer(draw_new_cells_system);
+    }
+}
 
 /// Event to trigger drawing a cell. Contains the entity of the cell to be drawn.
 #[derive(EntityEvent, Debug, Clone, Deref)]
@@ -198,11 +208,13 @@ fn insert_cell_visual(
     });
 }
 
-/// System to create visual entities for cells that don't already have them.
+/// System to (re)create visual entities for cells. Despawns any existing child
+/// visuals first so stale sprites don't linger when the cell's type changes.
 pub fn draw_new_cells_system(
     event: On<DrawCellEvent>,
     mut commands: Commands,
     cells: Query<(Entity, &Cell, &GridPosition, &FacingDirection)>,
+    existing_children: Query<&Children>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
@@ -214,6 +226,12 @@ pub fn draw_new_cells_system(
         "Drawing cell at ({}, {}) of type {:?}",
         grid_pos.x, grid_pos.y, cell,
     );
+
+    if let Ok(children) = existing_children.get(entity) {
+        for &child in children.iter() {
+            commands.entity(child).despawn();
+        }
+    }
 
     let transform = get_transform_with_rotation(grid_pos, **facing_direction);
     let spec = cell.visual_spec();

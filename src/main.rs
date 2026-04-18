@@ -18,8 +18,8 @@ use rand::RngExt;
 
 use crate::{
     cells::{
-        Cell, CellInfo, CellPlugin, Direction, FacingDirection, OrganismDepth,
-        RemainingTicksWithoutEnergy, UpdateCellInfoMessage, spawn_cell,
+        Cell, CellInfo, CellPlugin, Direction, FacingDirection, NewCellBundle, OrganismDepth,
+        RemainingTicksWithoutEnergy, SpawnCellMessage, UpdateCellInfoMessage,
     },
     cli::{Cli, Command},
     config::SimulationConfig,
@@ -125,6 +125,9 @@ pub struct SimulationSettings {
     pub view: SimulationView,
 }
 
+#[derive(Resource, Reflect, Default, Clone, Debug, Deref, DerefMut)]
+pub struct CellPositions(pub HashSet<GridPosition>);
+
 fn main() {
     let cli = Cli::parse();
 
@@ -218,6 +221,7 @@ fn run_simulation(config: SimulationConfig) {
         .insert_resource(Time::<Fixed>::from_hz(config.simulation.tick_rate as f64))
         .init_state::<SimulationState>()
         .init_resource::<SimulationStep>()
+        .init_resource::<CellPositions>()
         .add_message::<UpdateCellInfoMessage>()
         .add_systems(EguiPrimaryContextPass, cell_info_ui_system)
         .add_systems(
@@ -296,8 +300,8 @@ fn cell_info_ui_system(
 
 fn initialize_sprouts_system(
     settings: Res<SimulationSettings>,
-    mut commands: Commands,
     mut rng: Single<&mut WyRand, With<GlobalRng>>,
+    mut spawn_writer: MessageWriter<SpawnCellMessage>,
 ) {
     let genome: Genome = rng.random();
 
@@ -305,6 +309,8 @@ fn initialize_sprouts_system(
     let width = settings.config.simulation.width;
     let sprouts = settings.config.simulation.initial_sprout_count;
     let initial_energy = settings.config.simulation.initial_sprout_energy;
+    let remaining_ticks_without_energy =
+        RemainingTicksWithoutEnergy(settings.config.cell_defaults.max_ticks_without_energy);
 
     let mut positions = HashSet::with_capacity(sprouts);
     while positions.len() < sprouts {
@@ -316,21 +322,19 @@ fn initialize_sprouts_system(
     for &(x, y) in &positions {
         let facing_direction = rng.random::<FacingDirection>();
         let genome_id = rng.random::<GenomeID>();
-        _ = spawn_cell(
-            &mut commands,
-            GridPosition { x, y },
-            facing_direction,
-            Cell::Sprout,
-            CellEnergy(initial_energy),
-            genome.clone(),
-            genome_id,
-            cells::CellRelation {
-                parent: None,
-                children: HashSet::new(),
+        spawn_writer.write(SpawnCellMessage {
+            parent: None,
+            new_cell: NewCellBundle {
+                grid_pos: GridPosition { x, y },
+                facing_direction,
+                cell: Cell::Sprout,
+                cell_energy: CellEnergy(initial_energy),
+                genome: genome.clone(),
+                genome_id,
+                organism_depth: OrganismDepth(0),
+                remaining_ticks_without_energy,
             },
-            OrganismDepth(0),
-            RemainingTicksWithoutEnergy(settings.config.cell_defaults.max_ticks_without_energy),
-        )
+        });
     }
 }
 
