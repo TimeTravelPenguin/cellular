@@ -2,8 +2,8 @@
 
 //! An animated toggle button with multiple states.
 //!
-//! Each toggle is parameterized over a type `S: ToggleState` — typically an
-//! enum — that defines the variants and their labels. The widget renders as a
+//! Each toggle is parameterized over a type `S: ToggleState` -- typically an
+//! enum -- that defines the variants and their labels. The widget renders as a
 //! horizontal pill with one button per variant; a smaller pill sits behind the
 //! selected variant's label and tweens to the newly-chosen label with an
 //! easing curve whenever the state changes.
@@ -11,23 +11,33 @@
 //! # Styling
 //!
 //! [`ToggleStyle`] holds the defaults applied to every option. Per-state
-//! deviations are expressed through two callbacks stored on the style —
-//! [`ToggleStyle::on_selected`] and [`ToggleStyle::on_unselected`] — which
+//! deviations are expressed through two callbacks stored on the style --
+//! [`ToggleStyle::on_selected`] and [`ToggleStyle::on_unselected`] -- which
 //! receive the current state and the style and return an optional
 //! [`StateStyle`] whose `Some` fields override the defaults for that option.
 //!
 //! ```no_run
 //! # use bevy::prelude::*;
-//! use crate::ui::toggle::{spawn_toggle, StateStyle, Toggle, TogglePlugin, ToggleState, ToggleStyle};
+//! use crate::ui::toggle::{
+//!     spawn_toggle, StateStyle, Toggle,
+//!     TogglePlugin, ToggleState, ToggleStyle
+//! };
 //!
 //! #[derive(Clone, Copy, PartialEq, Eq)]
 //! enum View { Grid, Organic, Charge }
 //!
 //! impl ToggleState for View {
 //!     fn label(&self) -> &'static str {
-//!         match self { Self::Grid => "Grid", Self::Organic => "Organic", Self::Charge => "Charge" }
+//!         match self {
+//!             Self::Grid => "Grid",
+//!             Self::Organic => "Organic",
+//!             Self::Charge => "Charge"
+//!         }
 //!     }
-//!     fn states() -> &'static [Self] { &[Self::Grid, Self::Organic, Self::Charge] }
+//!
+//!     fn states() -> &'static [Self] {
+//!         &[Self::Grid, Self::Organic, Self::Charge]
+//!     }
 //! }
 //!
 //! # fn setup(mut commands: Commands) {
@@ -38,6 +48,7 @@
 //!         ..default()
 //!     })
 //! });
+//!
 //! spawn_toggle::<View>(&mut commands, View::Grid, style);
 //! # }
 //! ```
@@ -66,7 +77,7 @@ pub trait ToggleState: Copy + Clone + PartialEq + Send + Sync + 'static {
     fn states() -> &'static [Self];
 }
 
-/// Component on the toggle's root node holding the currently-selected state.
+/// Component on the toggles root node holding the currently-selected state.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Toggle<S: ToggleState> {
     pub state: S,
@@ -82,7 +93,7 @@ pub struct StateStyle {
     /// Replaces the base text color.
     pub text_color: Option<Color>,
     /// Replaces the indicator pill color (only honored when the state is
-    /// currently selected — the pill tweens to this value).
+    /// currently selected -- the pill tweens to this value).
     pub indicator_color: Option<Color>,
 }
 
