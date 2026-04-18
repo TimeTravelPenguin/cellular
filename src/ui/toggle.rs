@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 //! An animated toggle button with multiple states.
 //!
 //! Each toggle is parameterized over a type `S: ToggleState` — typically an
@@ -190,12 +192,9 @@ struct ToggleIndicator {
 struct ToggleTween {
     start_x: f32,
     start_w: f32,
-    target_x: f32,
-    target_w: f32,
     current_x: f32,
     current_w: f32,
     start_color: Color,
-    target_color: Color,
     current_color: Color,
     elapsed: f32,
     duration: f32,
@@ -288,12 +287,9 @@ pub fn spawn_toggle<S: ToggleState>(
             ToggleTween {
                 start_x: 0.0,
                 start_w: 0.0,
-                target_x: 0.0,
-                target_w: 0.0,
                 current_x: 0.0,
                 current_w: 0.0,
                 start_color: initial_indicator_color,
-                target_color: initial_indicator_color,
                 current_color: initial_indicator_color,
                 elapsed: duration,
                 duration,
@@ -377,23 +373,10 @@ fn selected_option_local_rect<S: ToggleState>(
 }
 
 fn retarget_on_state_change<S: ToggleState>(
-    changed_toggles: Query<(Entity, &Toggle<S>, &ToggleStyle<S>), Changed<Toggle<S>>>,
-    roots: Query<(&ComputedNode, &UiGlobalTransform), With<Toggle<S>>>,
-    options: Query<(&ToggleOption<S>, &ComputedNode, &UiGlobalTransform)>,
+    changed_toggles: Query<Entity, (Changed<Toggle<S>>, With<Toggle<S>>)>,
     mut indicators: Query<(&ToggleIndicator, &mut ToggleTween)>,
 ) {
-    for (toggle_entity, toggle, style) in changed_toggles.iter() {
-        let Some((target_x, target_w)) =
-            selected_option_local_rect::<S>(toggle_entity, toggle.state, &roots, &options)
-        else {
-            continue;
-        };
-
-        let target_color = style
-            .resolve(toggle.state, toggle.state)
-            .indicator_color
-            .unwrap_or(style.indicator);
-
+    for toggle_entity in changed_toggles.iter() {
         for (indicator, mut tween) in indicators.iter_mut() {
             if indicator.toggle != toggle_entity {
                 continue;
@@ -401,9 +384,6 @@ fn retarget_on_state_change<S: ToggleState>(
             tween.start_x = tween.current_x;
             tween.start_w = tween.current_w;
             tween.start_color = tween.current_color;
-            tween.target_x = target_x;
-            tween.target_w = target_w;
-            tween.target_color = target_color;
             tween.elapsed = 0.0;
         }
     }
@@ -436,7 +416,7 @@ fn update_text_styling<S: ToggleState>(
 
 fn animate_indicator<S: ToggleState>(
     time: Res<Time>,
-    toggles: Query<&Toggle<S>>,
+    toggles: Query<(&Toggle<S>, &ToggleStyle<S>)>,
     roots: Query<(&ComputedNode, &UiGlobalTransform), With<Toggle<S>>>,
     options: Query<(&ToggleOption<S>, &ComputedNode, &UiGlobalTransform)>,
     mut indicators: Query<(
@@ -447,23 +427,30 @@ fn animate_indicator<S: ToggleState>(
     )>,
 ) {
     for (mut indicator, mut tween, mut node, mut bg) in indicators.iter_mut() {
-        let Ok(toggle) = toggles.get(indicator.toggle) else {
+        let Ok((toggle, style)) = toggles.get(indicator.toggle) else {
             continue;
         };
 
-        if !indicator.initialized {
-            let Some((x, w)) =
-                selected_option_local_rect::<S>(indicator.toggle, toggle.state, &roots, &options)
-            else {
-                continue;
-            };
+        // Live-measured target so the indicator stays correct even when the
+        // selected option's layout changes (e.g. font size swap on selection).
+        let Some((target_x, target_w)) =
+            selected_option_local_rect::<S>(indicator.toggle, toggle.state, &roots, &options)
+        else {
+            continue;
+        };
 
-            tween.start_x = x;
-            tween.start_w = w;
-            tween.target_x = x;
-            tween.target_w = w;
-            tween.current_x = x;
-            tween.current_w = w;
+        let target_color = style
+            .resolve(toggle.state, toggle.state)
+            .indicator_color
+            .unwrap_or(style.indicator);
+
+        if !indicator.initialized {
+            tween.start_x = target_x;
+            tween.start_w = target_w;
+            tween.current_x = target_x;
+            tween.current_w = target_w;
+            tween.start_color = target_color;
+            tween.current_color = target_color;
             tween.elapsed = tween.duration;
             indicator.initialized = true;
         }
@@ -472,11 +459,17 @@ fn animate_indicator<S: ToggleState>(
             tween.elapsed = (tween.elapsed + time.delta_secs()).min(tween.duration);
             let t = tween.elapsed / tween.duration;
             tween.current_x =
-                EasingCurve::new(tween.start_x, tween.target_x, tween.ease).sample_clamped(t);
+                EasingCurve::new(tween.start_x, target_x, tween.ease).sample_clamped(t);
             tween.current_w =
-                EasingCurve::new(tween.start_w, tween.target_w, tween.ease).sample_clamped(t);
+                EasingCurve::new(tween.start_w, target_w, tween.ease).sample_clamped(t);
             let eased_t = EasingCurve::new(0.0_f32, 1.0, tween.ease).sample_clamped(t);
-            tween.current_color = tween.start_color.mix(&tween.target_color, eased_t);
+            tween.current_color = tween.start_color.mix(&target_color, eased_t);
+        } else {
+            // Keep the indicator locked to the selected option once the tween
+            // finishes, so later layout changes (resize, text edits) are picked up.
+            tween.current_x = target_x;
+            tween.current_w = target_w;
+            tween.current_color = target_color;
         }
 
         node.left = Val::Px(tween.current_x);
