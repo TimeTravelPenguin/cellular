@@ -138,7 +138,7 @@ fn process_keyboard_system(
 
     let tick_rate = &mut simulation_settings.config.simulation.tick_rate;
     if keyboard.just_pressed(KeyCode::Equal) {
-        *tick_rate = (*tick_rate).saturating_mul(2).min(1000);
+        *tick_rate = (*tick_rate).saturating_mul(2).min(2u32.pow(10));
         time.set_timestep_hz(*tick_rate as f64);
 
         info!(
