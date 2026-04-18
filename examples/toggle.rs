@@ -63,15 +63,11 @@ fn setup(mut commands: Commands) {
         .id();
 
     let style = ToggleStyle::<Size>::default()
-        .on_selected(|state, base| {
+        .on_selected(|state, _base| {
             (*state == Size::SuperUltraMegaLargeAndLong).then(|| StateStyle {
-                text_font: Some(TextFont {
-                    weight: FontWeight::BOLD,
-                    font_size: base.text_font.font_size + 5.0,
-                    ..Default::default()
-                }),
-                text_color: Some(Color::BLACK),
+                text_color: Some(Color::WHITE),
                 indicator_color: Some(Color::srgb(1.0, 0.0, 0.0)),
+                ..Default::default()
             })
         })
         .on_unselected(|state, _base| {
