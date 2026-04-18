@@ -25,6 +25,7 @@ mod spawn;
 mod systems;
 
 pub use self::systems::*;
+pub use spawn::spawn_cell;
 
 #[derive(Component, Reflect, Clone, Copy, Debug, Deref, DerefMut)]
 pub struct RemainingTicksWithoutEnergy(pub u32);
