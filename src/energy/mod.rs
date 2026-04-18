@@ -9,7 +9,9 @@ use itertools::Itertools;
 
 use crate::{GridPosition, cells::Direction, genes::RelativeDirection};
 
-mod systems;
+mod dispersal;
+
+pub use dispersal::disperse_on_death;
 
 pub const ORGANIC_TOXICICITY_LEVEL: u32 = 100;
 pub const CHARGE_TOXICITY_LEVEL: u32 = 90;

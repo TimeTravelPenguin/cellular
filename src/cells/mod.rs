@@ -22,11 +22,17 @@ use crate::{
     genes::{Genome, GenomeID, RelativeDirection},
 };
 
+mod actions;
+mod collection;
+mod death;
+mod execution;
+mod lifecycle;
+mod plugin;
 mod render;
 mod spawn;
-mod systems;
+mod transfer;
 
-pub use self::systems::*;
+pub use plugin::{CellSystemsPlugin, CellSystemsSet};
 pub use spawn::{NewCellBundle, SpawnCellMessage};
 
 #[derive(Clone, Copy, Debug)]
