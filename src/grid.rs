@@ -78,13 +78,11 @@ fn spawn_grid(
     ));
 }
 
-fn toggle_grid(
-    grid_visible: Res<GridVisible>,
-    mut query: Query<&mut Visibility, With<GridQuad>>,
-) {
+fn toggle_grid(grid_visible: Res<GridVisible>, mut query: Query<&mut Visibility, With<GridQuad>>) {
     if !grid_visible.is_changed() {
         return;
     }
+
     for mut vis in &mut query {
         *vis = if grid_visible.0 {
             Visibility::Visible

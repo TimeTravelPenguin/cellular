@@ -2,9 +2,7 @@ use crate::{
     GridPosition,
     cells::Cell,
     config::CellDeathEnergyRedistributionConfig,
-    energy::{
-        ChargeEnergyEnvironment, EnergyEnvironmentTrait, OrganicEnergyEnvironment,
-    },
+    energy::{ChargeEnergyEnvironment, EnergyEnvironmentTrait, OrganicEnergyEnvironment},
 };
 
 /// Deposits the energy of a dying cell back into the environment: a

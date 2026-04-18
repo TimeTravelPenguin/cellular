@@ -9,7 +9,10 @@ use bevy::{
 
 use crate::{
     CellPositions, GridPosition, SimulationSettings,
-    cells::{Cell, CellRelation, RemainingTicksWithoutEnergy, RemoveChildCellMessage, RequestDeathMessage},
+    cells::{
+        Cell, CellRelation, RemainingTicksWithoutEnergy, RemoveChildCellMessage,
+        RequestDeathMessage,
+    },
     energy::{CellEnergy, ChargeEnergyEnvironment, OrganicEnergyEnvironment, disperse_on_death},
 };
 
